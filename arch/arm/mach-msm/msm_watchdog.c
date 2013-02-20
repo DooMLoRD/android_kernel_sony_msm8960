@@ -255,14 +255,10 @@ static int wdog_init_done;
 
 void touch_nmi_watchdog(void)
 {
-	unsigned long long ns;
-
 	if (!wdog_init_done)
 		return;
 
-	ns = sched_clock() - last_pet;
-	if (nsecs_to_jiffies(ns) > delay_time)
-		pet_watchdog();
+	pet_watchdog();
 
 	touch_softlockup_watchdog();
 }

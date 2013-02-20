@@ -337,6 +337,20 @@ static int __devinit rmi4_i2c_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 
+	if (pdata->vreg_config) {
+		rc = pdata->vreg_config(dev, 1);
+		if (rc < 0) {
+			if (rc == -EAGAIN) {
+				rc = -EPROBE_DEFER;
+				dev_warn(dev, "Vreg not ready yet\n");
+			} else {
+				dev_err(dev, "failed to setup vreg\n");
+			}
+			goto err_driver_data;
+		}
+	}
+	msleep(200);
+
 	ddata = kzalloc(sizeof(*ddata), GFP_KERNEL);
 	if (!ddata) {
 		rc = -ENOMEM;
@@ -347,14 +361,6 @@ static int __devinit rmi4_i2c_probe(struct i2c_client *client,
 	ddata->set_page = rmi4_i2c_adapter_set_page;
 
 	dev_set_drvdata(dev, ddata);
-
-	if (pdata->vreg_config) {
-		rc = pdata->vreg_config(dev, 1);
-		if (rc < 0) {
-			dev_err(dev, "failed to setup vreg\n");
-			goto err_data_free;
-		}
-	}
 
 	rc = rmi4_i2c_check_device(client);
 	if (rc < 0) {

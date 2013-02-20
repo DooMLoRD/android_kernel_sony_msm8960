@@ -400,12 +400,9 @@ struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.min_voltage		= 3200,
 	.resume_voltage_delta	= 60,
 	.resume_soc		= 99,
-	.delta_soc		= 5,
 	.term_current		= CHG_TERM_MA,
-	.cold_temp		= 5,
 	.cool_temp		= 10,
 	.warm_temp		= 45,
-	.hot_temp		= 55,
 	.hysterisis_temp	= 3,
 	.temp_check_period	= 1,
 	.dc_unplug_check	= true,
@@ -420,7 +417,11 @@ struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.cold_thr		= PM_SMBC_BATT_TEMP_COLD_THR__HIGH,
 	.hot_thr		= PM_SMBC_BATT_TEMP_HOT_THR__HIGH,
 	.rconn_mohm		= 18,
-	.eoc_warm_batt		= true,
+	.btc_override		= 1,
+	.btc_override_cold_degc	= 5,
+	.btc_override_hot_degc	= 55,
+	.btc_delay_ms		= 10000,
+	.btc_panic_if_cant_stop_chg = 1,
 };
 
 static struct pm8xxx_misc_platform_data pm8xxx_misc_pdata = {

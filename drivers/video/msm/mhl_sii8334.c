@@ -45,7 +45,7 @@
 	do {} while (0)
 #endif
 
-#define MSC_COMMAND_TIME_OUT 2010
+#define MSC_COMMAND_TIME_OUT 2050
 #define CHARGER_INIT_WAIT 30
 #define CHARGER_INIT_DELAYED_TIME 20
 enum {
