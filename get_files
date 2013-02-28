@@ -1,0 +1,12 @@
+cp drivers/staging/prima/wlan.ko ../final_files/.
+cp net/wireless/cfg80211.ko ../final_files/.
+cp arch/arm/boot/zImage ../final_files/.
+echo "Stripping modules"
+cd ../final_files/
+for i in $(find . | grep .ko | grep './')
+do
+        echo $i
+	/home/doomlord/android/system/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-strip --strip-unneeded $i
+done
+cd ../android_kernel_sony_msm8960
+
