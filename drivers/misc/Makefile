@@ -81,3 +81,4 @@ obj-$(CONFIG_SONY_ONESEG_TUNER_PM) += oneseg_tunerpm.o
 obj-$(CONFIG_SONY_FELICA_SUPPORT) += felica.o
 obj-$(CONFIG_SONY_FELICA_NFC_SUPPORT) += felica_vdev.o
 obj-$(CONFIG_RAMDUMP_TAGS) += rdtags.o
+obj-$(CONFIG_CPU_UNDERVOLTING)	+= cpu_undervolting.o
