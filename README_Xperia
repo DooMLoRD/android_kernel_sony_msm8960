@@ -1,6 +1,7 @@
 Configuration files can be found in arch/arm/configs.
 
 Xperia T LT30a => blue_mint_defconfig
+Xperia V LT25i => blue_tsubasa_defconfig
 
 
 

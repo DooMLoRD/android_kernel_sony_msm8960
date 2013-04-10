@@ -1,4 +1,5 @@
 /* Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -193,6 +194,12 @@ struct msm_fb_data_type {
 	bool writeback_active_cnt;
 	int cont_splash_done;
 	int vsync_sysfs_created;
+#if defined(CONFIG_FB_MSM_RECOVER_PANEL) || defined(CONFIG_DEBUG_FS)
+	struct mutex power_lock;
+#endif
+#ifdef CONFIG_FB_MSM_RECOVER_PANEL
+	struct mutex nvrw_prohibit_draw;
+#endif
 };
 
 struct dentry *msm_fb_get_debugfs_root(void);
