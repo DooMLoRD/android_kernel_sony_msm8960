@@ -313,6 +313,9 @@ obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-rfkill.o msm_vibrator.o
 #blue
 board-blue-all-objs += board-blue.o board-blue-display.o board-blue-storage.o
 
+obj-$(CONFIG_MACH_BLUE_TSUBASA) += board-blue-all.o board-blue_tsubasa-pmic.o board-blue_tsubasa-gpiomux.o board-blue_tsubasa-regulator.o battery-blue_august.o
+obj-$(CONFIG_MACH_BLUE_TSUBASA) +=  gyro-sony_common.o board-blue_tsubasa-mpu.o board-blue_tsubasa-leds.o board-blue_tsubasa-camera.o board-blue_tsubasa-usb.o
+
 obj-$(CONFIG_MACH_BLUE_MINT) += board-blue-all.o board-blue_mint-pmic.o board-blue_mint-gpiomux.o board-blue_mint-regulator.o devices-8960.o battery-blue_mentos.o
 obj-$(CONFIG_MACH_BLUE_MINT) += gyro-sony_common.o board-blue_mint-mpu.o board-blue_mint-camera.o board-blue_mint-leds.o board-blue_mint-usb.o
 
@@ -398,6 +401,7 @@ obj-$(CONFIG_MSM_RPM_SMD) += rpm-smd.o
 
 obj-$(CONFIG_MSM_CPR) += msm_cpr.o
 obj-$(CONFIG_MSM_VP_REGULATOR) += msm_vp.o
+obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
 
 ifdef CONFIG_MSM_CPR
 obj-$(CONFIG_DEBUG_FS) += msm_cpr-debug.o

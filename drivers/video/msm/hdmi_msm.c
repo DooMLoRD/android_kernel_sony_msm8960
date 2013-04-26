@@ -1011,8 +1011,11 @@ static irqreturn_t hdmi_msm_isr(int irq, void *dev_id)
 			 * then stop the authentication , rather than
 			 * reauthenticating it again
 			 */
-			if (hdmi_msm_state->hdcp_activating &&
-					!(hdmi_msm_state->full_auth_done)) {
+			if ((hdmi_msm_state->hdcp_activating &&
+			    !(hdmi_msm_state->full_auth_done))
+			    || work_busy(&hdmi_msm_state->hdcp_work)
+			    || work_busy(&hdmi_msm_state->hdcp_reauth_work)
+			    || timer_pending(&hdmi_msm_state->hdcp_timer)) {
 				DEV_DBG("%s getting hpd while authenticating\n",
 					    __func__);
 				mutex_lock(&hdcp_auth_state_mutex);
@@ -2466,8 +2469,8 @@ static int hdcp_authentication_part1(void)
 		/* 0x0110 HDCP_CTRL
 			[8] ENCRYPTION_ENABLE
 			[0] ENABLE */
-		/* encryption_enable | enable  */
-		HDMI_OUTP(0x0110, (1 << 8) | (1 << 0));
+		/* Enable HDCP. Encryption should be enabled after reading R0 */
+		HDMI_OUTP(0x0110, BIT(0));
 
 		/*
 		 * Check to see if a HDCP DDC Failure is indicated in
@@ -2566,7 +2569,6 @@ static int hdcp_authentication_part1(void)
 			DEV_ERR("%s(%d): Write An failed", __func__, __LINE__);
 			goto error;
 		}
-
 		/* Write Aksv 5 bytes to offset 0x10 */
 		ret = hdmi_msm_ddc_write(0x74, 0x10, aksv, 5, "Aksv");
 		if (ret) {
@@ -2663,6 +2665,9 @@ static int hdcp_authentication_part1(void)
 			    __func__);
 			goto error;
 		}
+
+		/* Enable HDCP Encryption */
+		HDMI_OUTP(0x0110, BIT(0) | BIT(8));
 
 		DEV_INFO("HDCP: authentication part I, successful\n");
 		is_part1_done = FALSE;
@@ -3002,6 +3007,11 @@ static void hdmi_msm_hdcp_enable(void)
 		return;
 	}
 
+	if (hdmi_msm_state->hpd_during_auth) {
+		DEV_INFO("%s: Cancel HDCP authentication\n", __func__);
+		goto error;
+	}
+
 	mutex_lock(&hdmi_msm_state_mutex);
 	hdmi_msm_state->hdcp_activating = TRUE;
 	mutex_unlock(&hdmi_msm_state_mutex);
@@ -3019,6 +3029,9 @@ static void hdmi_msm_hdcp_enable(void)
 	* We probably need to protect this in a mutex lock */
 	hdmi_msm_state->full_auth_done = FALSE;
 	mutex_unlock(&hdcp_auth_state_mutex);
+
+	/* Disable HDCP before we start part1 */
+	HDMI_OUTP(0x0110, 0x0);
 
 	/* PART I Authentication*/
 	ret = hdcp_authentication_part1();
@@ -4193,8 +4206,10 @@ static void hdmi_msm_turn_on(void)
 
 #ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL_HDCP_SUPPORT
 	if (hdmi_msm_state->reauth) {
-		hdmi_msm_hdcp_enable();
 		hdmi_msm_state->reauth = FALSE ;
+		cancel_work_sync(&hdmi_msm_state->hdcp_reauth_work);
+		del_timer_sync(&hdmi_msm_state->hdcp_timer);
+		queue_work(hdmi_work_queue, &hdmi_msm_state->hdcp_work);
 	}
 #endif /* CONFIG_FB_MSM_HDMI_MSM_PANEL_HDCP_SUPPORT */
 
@@ -4866,7 +4881,7 @@ static int __init hdmi_msm_init(void)
 	 * Create your work queue
 	 * allocs and returns ptr
 	*/
-	hdmi_work_queue = create_workqueue("hdmi_hdcp");
+	hdmi_work_queue = create_singlethread_workqueue("hdmi_hdcp");
 	external_common_state->hpd_feature = hdmi_msm_hpd_feature;
 
 	rc = platform_driver_register(&this_driver);

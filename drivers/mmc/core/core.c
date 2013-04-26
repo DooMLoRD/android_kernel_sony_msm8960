@@ -76,6 +76,10 @@ MODULE_PARM_DESC(
 	removable,
 	"MMC/SD cards are removable and may be removed during suspend");
 
+/* Sandisk and Samsung manufacture-ID */
+#define SANDISK_MANFID 0x45
+#define SAMSUNG_MANFID 0x15
+
 /*
  * Internal function. Schedule delayed work in the MMC work queue.
  */
@@ -1666,14 +1670,6 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	unsigned int qty = 0;
 	int err;
 
-	/*
-	 * If we have a Samsung chip don't even try to erase, it may break
-	 * To be sure, only do erase on Sandisk
-	 */
-	if (card->cid.manfid != 69) {
-		err = 0;
-		goto out;
-	}
 
 	/*
 	 * qty is used to calculate the erase timeout which depends on how many
@@ -1709,6 +1705,30 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		cmd.opcode = SD_ERASE_WR_BLK_START;
 	else
 		cmd.opcode = MMC_ERASE_GROUP_START;
+	/* Always erase on Sandisk (manfid 69). */
+	if (card->cid.manfid != SANDISK_MANFID) {
+		/* Allow Samsung chips for secure discard and align on 8kB */
+		if ((card->cid.manfid == SAMSUNG_MANFID) &&
+		    (cmd.opcode == MMC_ERASE_GROUP_START) &&
+		    ((arg == MMC_SECURE_TRIM1_ARG) ||
+		     (arg == MMC_SECURE_TRIM2_ARG) ||
+		     (arg == MMC_SECURE_ERASE_ARG))) {
+			/*
+			 * Upper limit should be last 512B block in 8kB block
+			 * Move index up to next 512B block and possibly next
+			 * 8kB block, align it down and move back down,
+			 * possibly dropping as much as 8kB-512B
+			 */
+			to = round_down(to + 1, 16) - 1;
+			from = round_up(from, 16);
+			if (to > from) {
+				goto do_erase;
+			}
+		}
+		err = 0;
+		goto out;
+	}
+do_erase:
 	cmd.arg = from;
 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_AC;
 	err = mmc_wait_for_cmd(card->host, &cmd, 0);

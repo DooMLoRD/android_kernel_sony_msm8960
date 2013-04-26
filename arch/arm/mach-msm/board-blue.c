@@ -2589,6 +2589,8 @@ static int rmi4_vreg_config(struct device *dev, int enable)
 	dev_dbg(dev, "%s - Called (enable=%d)\n", __func__, enable);
 
 	if (enable) {
+		if (vreg_touch_vdd)
+			return 0;
 		vreg_touch_vdd = regulator_get(dev, RMI4_VDD);
 		if (IS_ERR(vreg_touch_vdd)) {
 			dev_err(dev, "get '%s' failed\n", RMI4_VDD);
@@ -2621,7 +2623,7 @@ static int rmi4_vreg_config(struct device *dev, int enable)
 			dev_err(dev, "vio enable vdd failed, rc=%d\n", rc);
 			goto vio_config_err;
 		}
-		msleep(100);
+		return -EAGAIN;
 	} else {
 		if (!IS_ERR(vreg_touch_vdd)) {
 			regulator_disable(vreg_touch_vdd);
@@ -3299,6 +3301,7 @@ static struct platform_device *cdp_devices[] __initdata = {
 	&android_usb_device,
 	&msm_pcm,
 	&msm_multi_ch_pcm,
+	&msm_lowlatency_pcm,
 	&msm_pcm_routing,
 	&msm_cpudai0,
 	&msm_cpudai1,
@@ -3997,7 +4000,7 @@ static void __init msm8960_cdp_init(void)
 	msm_pm_init_sleep_status_data(&msm_pm_slp_sts_data);
 }
 
-MACHINE_START(BLUE_SOMC, "BLUE_SOMC")
+MACHINE_START(BLUE_SOMC, "BLUE SOMC")
 	.map_io = msm8960_map_io,
 	.reserve = msm8960_reserve,
 	.init_irq = msm8960_init_irq,

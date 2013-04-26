@@ -1199,17 +1199,6 @@ static int calculate_pc(struct pm8921_bms_chip *chip, int ocv_uv, int batt_temp,
 	pc = (pc * scalefactor) / 100;
 	return pc;
 }
-/**
- * pm8921_bms_get_soc_by_vbat - returns SOC corresponding to vbat in argument.
- */
-int pm8921_bms_get_soc_by_vbat(int ocv_uv, int batt_temp, int chargecycles)
-{
-	if (the_chip == NULL) {
-		pr_err("Called to early\n");
-		return -EINVAL;
-	}
-	return calculate_pc(the_chip, ocv_uv, batt_temp, chargecycles);
-}
 
 /**
  * calculate_cc_uah -
