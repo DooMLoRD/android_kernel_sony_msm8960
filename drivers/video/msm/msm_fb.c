@@ -933,7 +933,6 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			ret = pdata->on(mfd->pdev);
 			if (ret == 0) {
 				mfd->panel_power_on = TRUE;
-
 #ifdef CONFIG_FB_MSM_RECOVER_PANEL
 			mutex_unlock(&mfd->power_lock);
 #endif
@@ -3046,7 +3045,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 
 	if (mfd->overlay_play_enable == 0)	/* nothing to do */
 		return 0;
-
 #ifdef CONFIG_FB_MSM_RECOVER_PANEL
 	if (mutex_is_locked(&mfd->nvrw_prohibit_draw))
 		return 0;
