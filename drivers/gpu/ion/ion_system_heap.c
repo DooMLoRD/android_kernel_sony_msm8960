@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2011 Google, Inc.
  * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -13,6 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
+ * NOTE: This file has been modified by Sony Mobile Communications AB.
+ * Modifications are licensed under the License.
  */
 
 #include <linux/err.h>
@@ -168,6 +171,7 @@ int ion_system_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 		unsigned long offset = vma->vm_pgoff;
 		struct scatterlist *sg;
 		int i;
+		int ret;
 
 		for_each_sg(table->sgl, sg, table->nents, i) {
 			struct page *page = sg_page(sg);
@@ -175,7 +179,12 @@ int ion_system_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 				offset--;
 				continue;
 			}
-			vm_insert_page(vma, addr, page);
+
+			ret = vm_insert_page(vma, addr, page);
+			if (ret) {
+				pr_err("%s: vm_insert_page failed\n", __func__);
+				return ret;
+			}
 			addr += PAGE_SIZE;
 
 			if (!buffer->vma_inserted)

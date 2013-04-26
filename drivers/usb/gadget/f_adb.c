@@ -48,7 +48,6 @@ struct adb_dev {
 	atomic_t read_excl;
 	atomic_t write_excl;
 	atomic_t open_excl;
-	struct delayed_work adb_release_w;
 
 	struct list_head tx_idle;
 
@@ -56,6 +55,8 @@ struct adb_dev {
 	wait_queue_head_t write_wq;
 	struct usb_request *rx_req;
 	int rx_done;
+	bool notify_close;
+	bool close_notified;
 };
 
 static struct usb_interface_descriptor adb_interface_desc = {
@@ -308,7 +309,7 @@ static ssize_t adb_read(struct file *fp, char __user *buf,
 requeue_req:
 	/* queue a request */
 	req = dev->rx_req;
-	req->length = count;
+	req->length = ADB_BULK_BUFFER_SIZE;
 	dev->rx_done = 0;
 	ret = usb_ep_queue(dev->ep_out, req, GFP_ATOMIC);
 	if (ret < 0) {
@@ -416,11 +417,6 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 	return r;
 }
 
-static void adb_release_work(struct work_struct *w)
-{
-	adb_closed_callback();
-}
-
 static int adb_open(struct inode *ip, struct file *fp)
 {
 	pr_info("adb_open\n");
@@ -435,9 +431,12 @@ static int adb_open(struct inode *ip, struct file *fp)
 	/* clear the error latch */
 	atomic_set(&_adb_dev->error, 0);
 
-	if (!cancel_delayed_work_sync(&_adb_dev->adb_release_w))
+	if (_adb_dev->close_notified) {
+		_adb_dev->close_notified = false;
 		adb_ready_callback();
+	}
 
+	_adb_dev->notify_close = true;
 	return 0;
 }
 
@@ -446,15 +445,17 @@ static int adb_release(struct inode *ip, struct file *fp)
 	pr_info("adb_release\n");
 
 	/*
-	 * When USB cable is plugged out, adb reader is unblocked and
-	 * -EIO is returned to user space. adb daemon reopen the port
-	 * which would disable and enable USB configuration unnecessarily.
-	 *
-	 * Delay notifying the adb close event to android by 1 sec. If
-	 * ADB daemon opens the port with in 1 sec, USB configuration
-	 * re-enable does not happen.
+	 * ADB daemon closes the device file after I/O error.  The
+	 * I/O error happen when Rx requests are flushed during
+	 * cable disconnect or bus reset in configured state.  Disabling
+	 * USB configuration and pull-up during these scenarios are
+	 * undesired.  We want to force bus reset only for certain
+	 * commands like "adb root" and "adb usb".
 	 */
-	schedule_delayed_work(&_adb_dev->adb_release_w, msecs_to_jiffies(1000));
+	if (_adb_dev->notify_close) {
+		adb_closed_callback();
+		_adb_dev->close_notified = true;
+	}
 
 	adb_unlock(&_adb_dev->open_excl);
 	return 0;
@@ -583,6 +584,12 @@ static void adb_function_disable(struct usb_function *f)
 	struct usb_composite_dev	*cdev = dev->cdev;
 
 	DBG(cdev, "adb_function_disable cdev %p\n", cdev);
+	/*
+	 * Bus reset happened or cable disconnected.  No
+	 * need to disable the configuration now.  We will
+	 * set noify_close to true when device file is re-opened.
+	 */
+	dev->notify_close = false;
 	atomic_set(&dev->online, 0);
 	atomic_set(&dev->error, 1);
 	usb_ep_disable(dev->ep_in);
@@ -630,7 +637,9 @@ static int adb_setup(void)
 	atomic_set(&dev->read_excl, 0);
 	atomic_set(&dev->write_excl, 0);
 
-	INIT_DELAYED_WORK(&dev->adb_release_w, adb_release_work);
+	/* config is disabled by default if adb is present. */
+	dev->close_notified = true;
+
 	INIT_LIST_HEAD(&dev->tx_idle);
 
 	_adb_dev = dev;
