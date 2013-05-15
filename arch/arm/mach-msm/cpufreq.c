@@ -119,6 +119,7 @@ static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 static struct notifier_block __refdata msm_cpufreq_cpu_notifier = {
 	.notifier_call = msm_cpufreq_cpu_callback,
 };
+
 static void set_cpu_work(struct work_struct *work)
 {
 	struct cpufreq_work_struct *cpu_work =
