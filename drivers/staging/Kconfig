@@ -9,11 +9,11 @@ menuconfig STAGING
 	  development, may or may not work, and may contain userspace
 	  interfaces that most likely will be changed in the near
 	  future.
-	  
+
 	  Using any of these drivers will taint your kernel which might
 	  affect support options from both the community, and various
 	  commercial support organizations.
-	  
+
 	  If you wish to work on these drivers, to help improve them, or
 	  to report problems you have with them, please see the
 	  driver_name.README file in the drivers/staging/ directory to
@@ -133,7 +133,5 @@ source "drivers/staging/telephony/Kconfig"
 source "drivers/staging/ramster/Kconfig"
 
 source "drivers/staging/ozwpan/Kconfig"
-
-source "drivers/staging/prima_legacy/Kconfig"
 
 endif # STAGING
