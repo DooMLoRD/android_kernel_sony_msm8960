@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,6 +36,9 @@
 
 #define MSM8974_TLMM_PHYS	0xFD510000
 #define MSM8974_TLMM_SIZE	SZ_16K
+
+#define MSM8974_MPM2_PSHOLD_PHYS	0xFC4AB000
+#define MSM8974_MPM2_PSHOLD_SIZE	SZ_4K
 
 #ifdef CONFIG_DEBUG_MSM8974_UART
 #define MSM_DEBUG_UART_BASE	IOMEM(0xFA71E000)

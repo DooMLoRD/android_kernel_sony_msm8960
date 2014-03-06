@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -421,7 +421,7 @@ bool msm_mpm_gpio_irqs_detectable(bool from_idle)
 			MSM_MPM_NR_APPS_IRQS);
 }
 
-void msm_mpm_enter_sleep(bool from_idle)
+void msm_mpm_enter_sleep(uint32_t sclk_count, bool from_idle)
 {
 	msm_mpm_set(!from_idle);
 }

@@ -50,13 +50,7 @@ config ARCH_MSM7X30
 	select MSM_REMOTE_SPINLOCK_DEKKERS
 	select ARCH_SPARSEMEM_ENABLE
 	select ARCH_HAS_HOLES_MEMORYMODEL
-	select MEMORY_HOTPLUG
-	select MEMORY_HOTREMOVE
-	select ARCH_ENABLE_MEMORY_HOTPLUG
-	select ARCH_ENABLE_MEMORY_HOTREMOVE
 	select MIGRATION
-	select ARCH_MEMORY_PROBE
-	select ARCH_MEMORY_REMOVE
 	select MSM_GPIOMUX
 	select RESERVE_FIRST_PAGE
 	select MSM_DALRPC
@@ -176,7 +170,13 @@ config ARCH_MSM8960
 	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
 	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
 	select MSM_CPU_PWRCTL
+	select HAVE_NMI_WATCHDOG if MSM_WATCHDOG || MSM_WATCHDOG_V2
+	select GENERIC_TIME_VSYSCALL
+	select USE_USER_ACCESSIBLE_TIMERS
+	select ARM_USE_USER_ACCESSIBLE_TIMERS
+	select MSM_USE_USER_ACCESSIBLE_TIMERS
 
 config ARCH_MSM8930
 	bool "MSM8930"
@@ -209,7 +209,12 @@ config ARCH_MSM8930
 	select HOLES_IN_ZONE if SPARSEMEM
 	select ARM_HAS_SG_CHAIN
 	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
 	select MSM_CPU_PWRCTL
+	select GENERIC_TIME_VSYSCALL
+	select USE_USER_ACCESSIBLE_TIMERS
+	select ARM_USE_USER_ACCESSIBLE_TIMERS
+	select MSM_USE_USER_ACCESSIBLE_TIMERS
 
 config ARCH_APQ8064
 	bool "APQ8064"
@@ -237,7 +242,13 @@ config ARCH_APQ8064
 	select ARCH_SUPPORTS_MSI
 	select ARM_HAS_SG_CHAIN
 	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
 	select MSM_CPU_PWRCTL
+	select HAVE_NMI_WATCHDOG if MSM_WATCHDOG || MSM_WATCHDOG_V2
+	select GENERIC_TIME_VSYSCALL
+	select USE_USER_ACCESSIBLE_TIMERS
+	select ARM_USE_USER_ACCESSIBLE_TIMERS
+	select MSM_USE_USER_ACCESSIBLE_TIMERS
 
 config ARCH_MSM8974
 	bool "MSM8974"
@@ -257,7 +268,44 @@ config ARCH_MSM8974
 	select SPARSE_IRQ
 	select MSM_RPM_SMD
 	select REGULATOR
-	select MSM_QDSP6_APR
+	select MSM_QDSP6_APRV2
+	select MSM_QDSP6V2_CODECS
+	select MSM_AUDIO_QDSP6V2 if SND_SOC
+	select MSM_RPM_REGULATOR_SMD
+	select ARM_HAS_SG_CHAIN
+	select MSM_RUN_QUEUE_STATS
+
+config ARCH_MPQ8092
+	bool "MPQ8092"
+	select ARCH_MSM_KRAITMP
+	select GPIO_MSM_V3
+	select ARM_GIC
+	select MULTI_IRQ_HANDLER
+	select CPU_V7
+	select MSM_GPIOMUX
+	select MAY_HAVE_SPARSE_IRQ
+	select SPARSE_IRQ
+	select MSM_NOPM
+
+config ARCH_MSM8226
+	bool "MSM8226"
+	select ARCH_MSM_KRAITMP
+	select GPIO_MSM_V3
+	select ARM_GIC
+	select CPU_V7
+	select MSM_SCM if SMP
+	select MSM_GPIOMUX
+	select MULTI_IRQ_HANDLER
+	select MSM_MULTIMEDIA_USE_ION
+	select MSM_PIL
+	select MSM_SPM_V2
+	select MSM_L2_SPM
+	select MSM_PM8X60 if PM
+	select MAY_HAVE_SPARSE_IRQ
+	select SPARSE_IRQ
+	select MSM_RPM_SMD
+	select REGULATOR
+	select MSM_QDSP6_APRV2
 	select MSM_QDSP6V2_CODECS
 	select MSM_AUDIO_QDSP6V2 if SND_SOC
 	select MSM_RPM_REGULATOR_SMD
@@ -313,14 +361,14 @@ config ARCH_MSM9625
 	bool "MSM9625"
 	select ARM_GIC
 	select GIC_SECURE
+	select MIGHT_HAVE_CACHE_L2X0
 	select ARCH_MSM_CORTEX_A5
 	select SMP
 	select MSM_SMP
 	select CPU_V7
 	select MSM_GPIOMUX
 	select MULTI_IRQ_HANDLER
-	select GPIO_MSM_V2
-
+	select GPIO_MSM_V3
 endmenu
 
 choice
@@ -365,16 +413,15 @@ config  ARCH_MSM_SCORPIONMP
 	select ARCH_MSM_SCORPION
 	select MSM_SMP
 	select HAVE_ARCH_HAS_CURRENT_TIMER
-	select MSM_JTAG if MSM_QDSS
+	select MSM_JTAG if CORESIGHT_ETM
 	bool
 
 config  ARCH_MSM_KRAITMP
 	select ARCH_MSM_KRAIT
 	select MSM_SMP
 	select HAVE_ARCH_HAS_CURRENT_TIMER
-	select MSM_JTAG if MSM_QDSS
+	select MSM_JTAG if CORESIGHT_ETM
 	bool
-	select HAVE_HW_BRKPT_RESERVED_RW_ACCESS
 
 config  ARCH_MSM_CORTEXMP
 	select MSM_SMP
@@ -385,7 +432,6 @@ config  MSM_KRAIT_WFE_FIXUP
 
 config  ARCH_MSM_CORTEX_A5
 	bool
-	select HAVE_HW_BRKPT_RESERVED_RW_ACCESS
 
 config ARCH_MSM7X27A
 	bool
@@ -406,10 +452,33 @@ config MSM_RPM
 
 config MSM_RPM_SMD
 	depends on MSM_SMD
-	bool "Support for using SMD as the transport layer for communicatons with RPM"
+	select MSM_MPM_OF
+	bool "RPM driver using SMD protocol"
+	help
+	  RPM is the dedicated hardware engine for managing shared SoC
+	  resources. This config adds driver support for using SMD as a
+	  transport layer communication with RPM hardware. It also selects
+	  the MSM_MPM config that programs the MPM module to monitor interrupts
+	  during sleep modes.
 
 config MSM_MPM
 	bool "Modem Power Manager"
+	help
+	  MPM is a dedicated hardware resource responsible for entering and
+	  waking up from a system wide low power mode. The MPM driver tracks
+	  the wakeup interrupts and configures the MPM to monitor the wakeup
+	  interrupts when going to a system wide sleep mode.
+
+config MSM_MPM_OF
+	bool "Modem Power Manager"
+	depends on CONFIG_OF
+	help
+	  MPM is a dedicated hardware resource responsible for entering and
+	  waking up from a system wide low power mode. The MPM driver tracks
+	  the wakeup interrupts and configures the MPM to monitor the wakeup
+	  interrupts when going to a system wide sleep mode. This config option
+	  enables the MPM driver that supports initialization from a device
+	  tree
 
 config MSM_XO
 	bool
@@ -680,20 +749,6 @@ config MACH_MSM8X55_SVLTE_SURF
        help
          Support for the Qualcomm MSM8x55 SVLTE SURF eval board.
 
-config MACH_MSM8X60_RUMI3
-	depends on ARCH_MSM8X60
-	default n
-	bool "MSM8x60 RUMI3"
-	help
-	  Support for the Qualcomm MSM8x60 RUMI3 emulator.
-
-config MACH_MSM8X60_SIM
-	depends on ARCH_MSM8X60
-	default n
-	bool "MSM8x60 Simulator"
-	help
-	  Support for the Qualcomm MSM8x60 simulator.
-
 config MACH_MSM8X60_SURF
 	depends on ARCH_MSM8X60
 	default n
@@ -739,18 +794,6 @@ config MACH_MSM8X60_DRAGON
 	help
 	  Support for the Qualcomm MSM8x60 Dragon board.
 
-config MACH_MSM8960_SIM
-	depends on ARCH_MSM8960
-	bool "MSM8960 Simulator"
-	help
-	  Support for the Qualcomm MSM8960 simulator.
-
-config MACH_MSM8960_RUMI3
-	depends on ARCH_MSM8960
-	bool "MSM8960 RUMI3"
-	help
-	  Support for the Qualcomm MSM8960 RUMI3 emulator.
-
 config MACH_MSM8960_CDP
 	depends on ARCH_MSM8960
 	bool "MSM8960 CDP"
@@ -793,6 +836,12 @@ config MACH_MSM8930_FLUID
 	help
 	  Support for the Qualcomm MSM8930 FLUID device.
 
+config MACH_MSM8930_EVT
+	depends on ARCH_MSM8930
+	bool "MSM8930 QRD EVT"
+	help
+	  Support for the Qualcomm Reference Design 8930 EVT device.
+
 config MACH_MSM8627_CDP
 	depends on ARCH_MSM8930
 	bool "MSM8627 CDP"
@@ -824,18 +873,6 @@ config MSM_USE_TSIF1
 	  Selects TSIF1 core to be used rather than TSIF0.
 	  The two TSIF cores share the same DM configuration
 	  so they cannot be used simultaneously.
-
-config MACH_APQ8064_SIM
-	depends on ARCH_APQ8064
-	bool "APQ8064 Simulator"
-	help
-	  Support for the Qualcomm APQ8064 simulator.
-
-config MACH_APQ8064_RUMI3
-	depends on ARCH_APQ8064
-	bool "APQ8064 RUMI3"
-	help
-	  Support for the Qualcomm APQ8064 RUMI3 emulator.
 
 config MACH_APQ8064_CDP
 	depends on ARCH_APQ8064
@@ -905,12 +942,18 @@ config MACH_BLUE_MINT
 	  Support for the Sony Mint
 
 config MACH_BLUE_HAYABUSA
-        depends on ARCH_MSM8960
-        default n
-        bool "SONY Hayabusa"
-        help
-          Support for the Sony Hayabusa
+	depends on ARCH_MSM8960
+	default n
+	bool "SONY Hayabusa"
+	help
+	  Support for the Sony Hayabusa
+
+config MACH_MSM_DUMMY
+	bool "NONE (No device)"
+
 endmenu
+
+source "arch/arm/mach-msm/lge/Kconfig"
 
 config MSM_STACKED_MEMORY
 	bool "Stacked Memory"
@@ -927,6 +970,8 @@ config PHYS_OFFSET
 	default "0x80200000" if ARCH_MSM8960
 	default "0x80200000" if ARCH_MSM8930
 	default "0x00000000" if ARCH_MSM8974
+	default "0x00000000" if ARCH_MPQ8092
+	default "0x00000000" if ARCH_MSM8226
 	default "0x10000000" if ARCH_FSM9XXX
 	default "0x20200000" if ARCH_MSM9625
 	default "0x00200000" if !MSM_STACKED_MEMORY
@@ -935,12 +980,15 @@ config PHYS_OFFSET
 	default "0x40200000" if ARCH_MSM8X60
 	default "0x10000000"
 
-config KERNEL_PMEM_EBI_REGION
-	bool "Enable in-kernel PMEM region for EBI"
+config KERNEL_MSM_CONTIG_MEM_REGION
+	bool "Enable in-kernel contiguous memory region"
 	default y if ARCH_MSM8X60
 	depends on ANDROID_PMEM && (ARCH_MSM8X60 || ARCH_MSM8960 || ARCH_MSM8974)
 	help
-	   Enable the in-kernel PMEM allocator to use EBI memory.
+	   Enable the in-kernel contiguous memory allocator. Sets up a
+	   region of physically contiguous memory. This memory is
+	   reserved during initialization, and can be used
+	   generically.
 
 config KERNEL_PMEM_SMI_REGION
 	bool "Enable in-kernel PMEM region for SMI"
@@ -1398,6 +1446,15 @@ config MSM_SDIO_TTY
 	  applications for passing data through the
 	  SDIO interface.
 
+config MSM_HSIC_TTY
+	bool "HSIC TTY Driver"
+	default n
+	help
+	  Provides a TTY driver HSIC TTY
+	  This driver can be used by user space
+	  applications for passing data through the
+	  HSIC interface.
+
 config MSM_SMD_TTY
 	bool "SMD TTY Driver"
 	depends on MSM_SMD
@@ -1474,6 +1531,26 @@ config MSM_IPC_ROUTER_SMD_XPRT
 	bool "MSM SMD XPRT Layer"
 	help
 	  SMD Transport Layer for IPC Router
+
+config MSM_IPC_ROUTER_HSIC_XPRT
+	depends on USB_QCOM_IPC_BRIDGE
+	depends on MSM_IPC_ROUTER
+	bool "MSM HSIC XPRT Layer"
+	help
+	  HSIC Transport Layer that enables off-chip communication of
+	  IPC Router. When the HSIC endpoint becomes available, this layer
+	  registers the transport with IPC Router and enable message
+	  exchange.
+
+config MSM_IPC_ROUTER_SECURITY
+	depends on MSM_IPC_ROUTER
+	bool "MSM IPC Router Security support"
+	help
+	  This feature of IPC Router will enforce security rules
+	  configured by a security script from the user-space. IPC Router
+	  once configured with the security rules will ensure that the
+	  sender of the message to a service belongs to the relevant
+	  Linux group as configured by the security script.
 
 config MSM_ONCRPCROUTER_DEBUG
 	depends on MSM_ONCRPCROUTER
@@ -1600,17 +1677,6 @@ config MSM_CPU_FREQ_MIN
 	default 245760
 
 endif # CPU_FREQ_MSM
-
-config MSM_CPU_AVS
-	bool "Enable software controlled Adaptive Voltage Scaling (AVS)"
-	depends on (ARCH_MSM_SCORPION && QSD_SVS)
-	depends on ARCH_QSD8X50
-	default n
-	select MSM_AVS_HW
-	help
-	  This enables the s/w control of Adaptive Voltage Scaling feature
-	  in Qualcomm ARMv7 CPUs. It adjusts the voltage for each frequency
-	  based on feedback from three ring oscillators in the CPU.
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -1863,6 +1929,24 @@ config MSM_RPM_REGULATOR_SMD
 	  be used on systems which contain an RPM which communicates with the
 	  application processor over SMD.
 
+config MSM_SUBSYSTEM_RESTART
+	bool "MSM Subsystem Restart"
+	help
+	  This option enables the MSM subsystem restart framework.
+
+	  The MSM subsystem restart framework provides support to boot,
+	  shutdown, and restart subsystems with a reference counted API.
+	  It also notifies userspace of transitions between these states via
+	  sysfs.
+
+config MSM_SYSMON_COMM
+	bool "MSM System Monitor communication support"
+	depends on MSM_SMD && MSM_SUBSYSTEM_RESTART
+	help
+	  This option adds support for MSM System Monitor library, which
+	  provides an API that may be used for notifying subsystems within
+	  the SoC about other subsystems' power-up/down state-changes.
+
 config MSM_PIL
 	bool "Peripheral image loading"
 	select FW_LOADER
@@ -1974,23 +2058,6 @@ config MSM_SCM
 	bool "Secure Channel Manager (SCM) support"
 	default n
 
-config MSM_SUBSYSTEM_RESTART
-	bool "MSM Subsystem Restart Driver"
-	depends on (ARCH_MSM8X60 || ARCH_MSM8960 || ARCH_MSM9615)
-	default n
-	help
-	  This option enables the MSM subsystem restart driver, which provides
-	  a framework to handle subsystem crashes.
-
-config MSM_SYSMON_COMM
-	bool "MSM System Monitor communication support"
-	depends on MSM_SMD && MSM_SUBSYSTEM_RESTART
-	default y
-	help
-	  This option adds support for MSM System Monitor library, which
-	  provides an API that may be used for notifying subsystems within
-	  the SoC about other subsystems' power-up/down state-changes.
-
 config MSM_MODEM_8960
 	bool "MSM 8960 Modem driver"
 	depends on (ARCH_MSM8960 || ARCH_MSM9615)
@@ -2009,7 +2076,8 @@ config MSM_LPASS_8960
 
 config MSM_WCNSS_SSR_8960
 	tristate "MSM 8960 WCNSS restart module"
-	depends on (ARCH_MSM8960)
+	depends on ARCH_MSM8960
+	depends on WCNSS_CORE
 	help
 	 This option enables the WCNSS restart module for MSM8960, which
 	 monitors WCNSS hardware watchdog interrupt lines and plugs WCNSS
@@ -2113,6 +2181,14 @@ config MSM_PM8X60
 	depends on PM
 	bool
 
+config MSM_EVENT_TIMER
+	bool "Event timer"
+	help
+		This option enables a modules that manages a list of event timers that
+		need to be monitored by the PM. The enables the PM code to monitor
+		events that require the core to be awake and ready to handle the
+		event.
+
 config MSM_NOPM
 	default y if !PM
 	bool
@@ -2142,6 +2218,14 @@ config MSM_WATCHDOG_V2
 		deadlocks. It does not run during the bootup process, so it will
 		not catch any early lockups.
 
+config MSM_MEMORY_DUMP
+	bool "MSM Memory Dump Support"
+	help
+		This enables memory dump feature. It allows various client
+		subsystems to register respective dump regions. At the time
+		of deadlocks or cpu hangs these dump regions are captured to
+		give a snapshot of the system at the time of the crash.
+
 config MSM_DLOAD_MODE
 	bool "Enable download mode on crashes"
 	depends on ARCH_MSM8X60 || ARCH_MSM8960 || ARCH_MSM9615
@@ -2153,15 +2237,29 @@ config MSM_DLOAD_MODE
 		enabled via another mechanism.
 
 config MSM_JTAG
-	bool "JTAG and kernel debug and trace support across power collapse"
+	bool "Debug and ETM trace support across power collapse"
 	help
-	  Enables support for kernel debugging (specifically breakpoints) and
+	  Enables support for debugging (specifically breakpoints) and ETM
 	  processor tracing across power collapse both for JTag and OS hosted
 	  software running on the target. Enabling this will ensure debug
 	  and ETM registers are saved and restored across power collapse.
 
-	  For production builds, you should probably say 'N' here to avoid
-	  potential power, performance and memory penalty.
+	  If unsure, say 'N' here to avoid potential power, performance and
+	  memory penalty.
+
+config MSM_JTAG_MM
+	bool "Debug and ETM trace support across power collapse using memory mapped access"
+	help
+	  Enables support for debugging (specifically breakpoints) and ETM
+	  processor tracing across power collapse both for JTag and OS hosted
+	  software running on the target. Enabling this will ensure debug
+	  and ETM registers are saved and restored across power collapse.
+
+	  Required on targets on which cp14 access to debug and ETM registers is
+	  not permitted and so memory mapped access is necessary.
+
+	  If unsure, say 'N' here to avoid potential power, performance and
+	  memory penalty.
 
 config MSM_ETM
 	tristate "Enable MSM ETM and ETB"
@@ -2169,11 +2267,6 @@ config MSM_ETM
 	select MSM_JTAG
 	help
 	  Enables embedded trace collection on MSM8660
-
-config MSM_SLEEP_STATS
-	bool "Enable exporting of MSM sleep stats to userspace"
-	depends on CPU_IDLE
-	default n
 
 config MSM_SLEEP_STATS_DEVICE
 	bool "Enable exporting of MSM sleep device stats to userspace"
@@ -2195,12 +2288,6 @@ config MSM_GSBI9_UART
 	default n
 	help
 	  This enables GSBI9 configured into UART.
-
-config MSM_GSBI10_UART
-	bool "Enable GSBI10 UART device"
-	default n
-	help
-	  This enables GSBI10 configured into UART.
 
 config MSM_GSBI12_UART
 	bool "Enable GSBI12 UART device"
@@ -2253,6 +2340,16 @@ config MSM_QDSP6_APR
 	  used by audio driver to configure QDSP6's
 	  ASM, ADM and AFE.
 
+config MSM_QDSP6_APRV2
+	bool "Audio QDSP6 APRv2 support"
+	depends on MSM_SMD
+	default n
+	help
+	  Enable APRv2 IPC protocol support between
+	  application processor and QDSP6. APR is
+	  used by audio driver to configure QDSP6's
+	  ASM, ADM and AFE.
+
 config MSM_QDSP6_CODECS
 	bool "Audio Codecs on QDSP6 APR "
 	depends on MSM_SMD
@@ -2289,6 +2386,16 @@ config MSM_AUDIO_QDSP6V2
           audio processing. It will enable support for
           AAC, AMRNB, AMRWB, EVRC, MP3, QCELP among
           others.
+
+config MSM_ADSP_LOADER
+        tristate "ADSP loader support"
+        select SND_SOC_MSM_APRV2_INTF
+	depends on MSM_AUDIO_QDSP6V2 && m
+        help
+          Enable ADSP image loader.
+	  The ADSP loader brings ADSP out of reset
+	  for the platforms that use APRv2.
+	  Say M if you want to enable this module.
 
 config MSM_ULTRASOUND
 	bool "MSM ultrasound support"
@@ -2349,12 +2456,64 @@ config MSM_OCMEM
 	  Enable support for On-Chip Memory available on certain MSM chipsets.
 	  OCMEM is a low latency, high performance pool shared by subsystems.
 
+config MSM_OCMEM_LOCAL_POWER_CTRL
+	bool "OCMEM Local Power Control"
+	depends on MSM_OCMEM
+	help
+	  Enable direct power management of the OCMEM core by the
+	  OCMEM driver. By default power management is delegated to
+	  the RPM. Selecting this option causes the OCMEM driver to
+	  directly handle the various macro power transitions.
+
+config MSM_OCMEM_DEBUG
+	bool "OCMEM Debug Support"
+	depends on MSM_OCMEM
+	help
+	  Enable debug options for On-chip Memory (OCMEM) driver.
+	  Various debug options include memory, power and latency.
+	  Choosing one of these options allows debugging of each
+	  individual subsystem separately.
+
+config MSM_OCMEM_NONSECURE
+	bool "OCMEM Non Secure Mode"
+	depends on MSM_OCMEM_DEBUG
+	help
+	  Disable OCMEM interaction with secure processor.
+	  By default OCMEM is secured and accesses for each master
+	  is requested by the OCMEM driver. Selecting this option
+	  causes the OCMEM memory to be in non-secure state unless
+	  its locked down by the secure processor.
+
+config MSM_OCMEM_POWER_DEBUG
+	bool "OCMEM Power Debug Support"
+	depends on MSM_OCMEM_DEBUG
+	help
+	  Enable debug support for OCMEM power management.
+	  This adds support for verifying all power management
+	  related operations of OCMEM. Both local power management
+	  and RPM assisted power management operations are supported.
+
+config MSM_OCMEM_POWER_DISABLE
+	bool "OCMEM Disable Power Control"
+	depends on MSM_OCMEM_DEBUG
+	help
+	  Disable all OCMEM power management.
+	  This keeps all OCMEM macros turned ON at all times thus
+	  never allowing them to be turned OFF. Both local power
+	  management and RPM assisted power modes are supported.
+
 config PM8921_MIC_BIAS
-        bool "pm8921 mic bias driver"
-        default n
-        help
-          Provides support for activate pm8921 mic bias driver used for
-          primary and secondary mic.
+	bool "pm8921 mic bias driver"
+	default n
+	help
+	  Provides support for activate pm8921 mic bias driver used for
+	  primary and secondary mic.
+
+config CODEC_MICBIAS_WITH_CAPACITANCE
+	bool "wcd9310 micbias bypass capacitance"
+	default n
+	help
+	  Provides support for config wcd9310 micbias cap mode.
 
 config MSM_RTB
 	bool "Register tracing"
@@ -2419,6 +2578,21 @@ config MSM_L1_ERR_PANIC
 	  instability is suspected.
 
 	  For production builds, you should probably say 'N' here.
+
+config MSM_L1_RECOV_ERR_PANIC
+	bool "Panic on recoverable L1 cache errors"
+	depends on MSM_CACHE_ERP && MSM_L1_ERR_PANIC
+	help
+	  Certain CPU designs may be able to automatically recover from certain
+	  kinds of L1 cache errors, even though the L1 cache itself may not
+	  support error correction. These errors should not result in any kind
+	  of corruption, but their presence is nevertheless an indication of
+	  poor system health. To cause the kernel to panic whenever a
+	  recoverable L1 cache error is detected, say 'Y' here. This may be
+	  useful as a debugging technique if general system instability is
+	  suspected.
+
+	  For production builds, you should definitely say 'N' here.
 
 config MSM_L1_ERR_LOG
 	bool "Log CPU ERP events to system memory"
@@ -2525,6 +2699,15 @@ config MSM_CACHE_DUMP_ON_PANIC
 	  want to dump the L1 and L2 caches on panic before any flush occurs.
 	  If unsure, say N
 
+config SONY_SSM
+	bool "Support Super Stamina Mode"
+	default n
+	help
+	  This enables support for power mode notifications, required by Super
+	  Stamina Mode. The driver will let a user space application register
+	  for notifications when the device is ready to switch into a new
+	  power mode.
+
 config MSM_HSIC_SYSMON
 	tristate "MSM HSIC system monitor driver"
 	depends on USB
@@ -2542,49 +2725,25 @@ config MSM_HSIC_SYSMON_TEST
 	  can be read and written to send character data to the sysmon port of
 	  the modem over USB.
 
-config MMC_MSM_POWER_SUPPLY_SDC3_VIA_MPP04
-	bool "PMIC MPP04"
-	default n
-	help
-	  The power supply for uSD is controlled via MPP04(GPIO)
-
-config SONY_SSM
-        bool "Support Super Stamina Mode"
-        default n
-        help
-          This enables support for power mode notifications, required by Super
-          Stamina Mode.
-
-config RIVA_RAMDUMP_START
-	hex "RIVA ramdump start address"
-	default "0x8f000000"
-	help
-		start address of region to dump for riva
-
-config RIVA_RAMDUMP_END
-	hex "RIVA ramdump end address"
-	default "0x8f700000"
-	help
-		end address of region to dump for riva
-
-config LPASS_RAMDUMP_START
-	hex "LPASS ramdump start address"
-	default "0x8da00000"
-	help
-		start address of region to dump for lpass
-
-config LPASS_RAMDUMP_END
-	hex "LPASS ramdump end address"
-	default "0x8f200000"
-	help
-		end address of region to dump for lpass
-
 config MSM_CPU_PWRCTL
 	bool "Ensures that krait droop detectors are always off"
 	help
 	  Droop detector mechanism can adversely affect krait plls during
 	  stand alone power collapse operation. Selecting this option
 	  ensures that they are always off.
+
+config MMC_MSM_POWER_SUPPLY_SDC3_VIA_MPP04
+	bool "PMIC MPP04"
+	default n
+	help
+	  The power supply for uSD is controlled via MPP04(GPIO)
+
+config MSM_USE_USER_ACCESSIBLE_TIMERS
+	bool "Enables mapping an MSM timer counter page to user space."
+	depends on ARM_USE_USER_ACCESSIBLE_TIMERS
+	help
+	  Enables MSM-specific user accessible timers via a shared
+	  memory page containing the cycle counter.
 
 config MSM_CPUFREQ_LIMITER
 	tristate "MSM CPU frequency limiter"

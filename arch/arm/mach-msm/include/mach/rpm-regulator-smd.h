@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,7 +29,8 @@ struct rpm_regulator;
  * in this enum correspond to MSM8974 for PMIC PM8841 SMPS 2 (VDD_Dig).
  */
 enum rpm_regulator_voltage_corner {
-	RPM_REGULATOR_CORNER_RETENTION = 1,
+	RPM_REGULATOR_CORNER_NONE = 1,
+	RPM_REGULATOR_CORNER_RETENTION,
 	RPM_REGULATOR_CORNER_SVS_KRAIT,
 	RPM_REGULATOR_CORNER_SVS_SOC,
 	RPM_REGULATOR_CORNER_NORMAL,

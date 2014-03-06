@@ -109,7 +109,7 @@ endif
 #
 # Rules for packing kernel into elf and sin
 #
-$(PRODUCT_OUT)/cmdline.txt: device/semc/$(SEMC_PLATFORM)/BoardConfig.mk
+$(PRODUCT_OUT)/cmdline.txt: device/somc/$(SEMC_PLATFORM)/BoardConfig.mk
 	$(hide) echo -n '$(BOARD_KERNEL_CMDLINE)' > $@
 
 $(PRODUCT_OUT)/kernel-unsigned.elf: $(TARGET_PREBUILT_KERNEL) $(PRODUCT_OUT)/ramdisk.img $(PRODUCT_OUT)/RPM.bin $(PRODUCT_OUT)/cmdline.txt | sin-tools
@@ -136,5 +136,3 @@ $(PRODUCT_OUT)/kernel.sin: $(PRODUCT_OUT)/kernel.si_ $(PRODUCT_PARTITION_CONFIG)
 .PHONY: sin
 
 sin: $(PRODUCT_OUT)/kernel.sin
-
-

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -33,6 +33,7 @@
 #include <linux/smux.h>
 #include <linux/slab.h>
 #include <linux/debugfs.h>
+#include <linux/poll.h>
 
 #include <asm/ioctls.h>
 
@@ -49,9 +50,11 @@ module_param_named(debug_mask, msm_smux_ctl_debug_mask,
 
 static uint32_t smux_ctl_ch_id[] = {
 	SMUX_DATA_CTL_0,
+	SMUX_DATA_CTL_1,
 };
 
 #define SMUX_CTL_NUM_CHANNELS ARRAY_SIZE(smux_ctl_ch_id)
+#define DEFAULT_OPEN_TIMEOUT 5
 
 struct smux_ctl_dev {
 	int id;
@@ -64,6 +67,7 @@ struct smux_ctl_dev {
 	int is_channel_reset;
 	int is_high_wm;
 	int write_pending;
+	unsigned open_timeout_val;
 
 	struct mutex rx_lock;
 	uint32_t read_avail;
@@ -148,6 +152,52 @@ do { \
 #else
 #define SMUXCTL_SET_LOOPBACK(lcid) do {} while (0)
 #endif
+
+static ssize_t open_timeout_store(struct device *d,
+		struct device_attribute *attr,
+		const char *buf,
+		size_t n)
+{
+	int i;
+	unsigned long tmp;
+	for (i = 0; i < SMUX_CTL_NUM_CHANNELS; ++i) {
+		if (smux_ctl_devp[i]->devicep == d)
+			break;
+	}
+	if (i >= SMUX_CTL_NUM_CHANNELS) {
+		pr_err("%s: unable to match device to valid smux ctl port\n",
+				__func__);
+		return -EINVAL;
+	}
+	if (!kstrtoul(buf, 10, &tmp)) {
+		smux_ctl_devp[i]->open_timeout_val = tmp;
+		return n;
+	} else {
+		pr_err("%s: unable to convert: %s to an int\n", __func__,
+				buf);
+		return -EINVAL;
+	}
+}
+
+static ssize_t open_timeout_show(struct device *d,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int i;
+	for (i = 0; i < SMUX_CTL_NUM_CHANNELS; ++i) {
+		if (smux_ctl_devp[i]->devicep == d)
+			break;
+	}
+	if (i >= SMUX_CTL_NUM_CHANNELS) {
+		pr_err("%s: unable to match device to valid smux ctl port\n",
+				__func__);
+		return -EINVAL;
+	}
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+			smux_ctl_devp[i]->open_timeout_val);
+}
+
+static DEVICE_ATTR(open_timeout, 0664, open_timeout_show, open_timeout_store);
 
 static int get_ctl_dev_index(int id)
 {
@@ -323,6 +373,7 @@ int smux_ctl_open(struct inode *inode, struct file *file)
 {
 	int r = 0;
 	struct smux_ctl_dev *devp;
+	unsigned wait_time = DEFAULT_OPEN_TIMEOUT * HZ;
 
 	if (!smux_ctl_inited)
 		return -EIO;
@@ -349,11 +400,14 @@ int smux_ctl_open(struct inode *inode, struct file *file)
 			return r;
 		}
 
+		if (devp->open_timeout_val)
+			wait_time = devp->open_timeout_val * HZ;
+
 		r = wait_event_interruptible_timeout(
 				devp->write_wait_queue,
 				(devp->state == SMUX_CONNECTED ||
-				 devp->abort_wait),
-				(5 * HZ));
+				devp->abort_wait),
+				wait_time);
 		if (r == 0)
 			r = -ETIMEDOUT;
 
@@ -701,6 +755,34 @@ static long smux_ctl_ioctl(struct file *file, unsigned int cmd,
 	return ret;
 }
 
+static unsigned int smux_ctl_poll(struct file *file, poll_table *wait)
+{
+	struct smux_ctl_dev *devp;
+	unsigned int mask = 0;
+	int readable;
+
+	devp = file->private_data;
+	if (!devp)
+		return -ENODEV;
+
+	SMUXCTL_DBG(SMUX_CTL_MODULE_NAME ": %s called on smuxctl%d\n",
+			__func__, devp->id);
+
+	poll_wait(file, &devp->read_wait_queue, wait);
+
+	readable = smux_ctl_readable(devp->id);
+	if (readable > 0) {
+		mask = POLLIN | POLLRDNORM;
+	} else if ((readable < 0) && (readable != -ERESTARTSYS)) {
+		/* error case (non-signal) received */
+		pr_err(SMUX_CTL_MODULE_NAME ": %s err%d during poll for smuxctl%d\n",
+			__func__, readable, devp->id);
+		mask = POLLERR;
+	}
+
+	return mask;
+}
+
 static const struct file_operations smux_ctl_fops = {
 	.owner = THIS_MODULE,
 	.open = smux_ctl_open,
@@ -708,6 +790,7 @@ static const struct file_operations smux_ctl_fops = {
 	.read = smux_ctl_read,
 	.write = smux_ctl_write,
 	.unlocked_ioctl = smux_ctl_ioctl,
+	.poll = smux_ctl_poll,
 };
 
 static void smux_ctl_reset_channel(struct smux_ctl_dev *devp)
@@ -822,6 +905,11 @@ static int smux_ctl_probe(struct platform_device *pdev)
 			kfree(smux_ctl_devp[i]);
 			goto error2;
 		}
+		if (device_create_file(smux_ctl_devp[i]->devicep,
+				&dev_attr_open_timeout))
+			pr_err("%s: unable to create device attr for" \
+				" smux ctl dev id:%d\n", __func__, i);
+
 	}
 
 	smux_ctl_inited = 1;
@@ -853,6 +941,7 @@ error0:
 static int smux_ctl_remove(struct platform_device *pdev)
 {
 	int i;
+	int ret;
 
 	SMUXCTL_DBG(SMUX_CTL_MODULE_NAME ": %s Begins\n", __func__);
 
@@ -863,6 +952,13 @@ static int smux_ctl_remove(struct platform_device *pdev)
 		devp->abort_wait = 1;
 		wake_up(&devp->write_wait_queue);
 		wake_up(&devp->read_wait_queue);
+
+		if (atomic_read(&devp->ref_count)) {
+			ret = msm_smux_close(devp->id);
+			if (ret)
+				pr_err("%s: unable to close ch %d, ret %d\n",
+						__func__, devp->id, ret);
+		}
 		mutex_unlock(&devp->dev_lock);
 
 		/* Empty RX queue */

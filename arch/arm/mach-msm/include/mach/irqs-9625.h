@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,11 +21,11 @@
  * 32+:   SPI (shared peripheral interrupts)
  */
 
+#define GIC_SPI_START 32
 
 #define APCC_QGICL2PERFMONIRPTREQ	(GIC_SPI_START + 1)
 #define SC_SICL2PERFMONIRPTREQ		APCC_QGICL2PERFMONIRPTREQ
-#define TLMM_MSM_SUMMARY_IRQ		(GIC_SPI_START + 16)
-#define SPS_BAM_DMA_IRQ			(GIC_SPI_START + 208)
+#define TLMM_MSM_SUMMARY_IRQ		(GIC_SPI_START + 208)
 
 #define NR_MSM_IRQS 288
 #define NR_GPIO_IRQS 88

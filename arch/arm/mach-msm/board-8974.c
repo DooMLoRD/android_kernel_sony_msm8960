@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,15 +20,13 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
-#ifdef CONFIG_ION_MSM
-#include <linux/ion.h>
-#endif
 #include <linux/memory.h>
 #ifdef CONFIG_ANDROID_PMEM
 #include <linux/android_pmem.h>
 #endif
-#include <linux/regulator/stub-regulator.h>
 #include <linux/regulator/machine.h>
+#include <linux/regulator/krait-regulator.h>
+#include <linux/msm_thermal.h>
 #include <asm/mach/map.h>
 #include <asm/hardware/gic.h>
 #include <mach/board.h>
@@ -44,6 +42,7 @@
 #include <mach/qpnp-int.h>
 #include <mach/socinfo.h>
 #include <mach/msm_bus_board.h>
+#include <mach/mpm.h>
 #include "clock.h"
 #include "devices.h"
 #include "spm.h"
@@ -51,17 +50,6 @@
 #include "lpm_resources.h"
 
 #define MSM_KERNEL_EBI1_MEM_SIZE	0x280000
-#ifdef CONFIG_FB_MSM_HDMI_AS_PRIMARY
-#define MSM_ION_SF_SIZE 0x4000000 /* 64 Mbytes */
-#else
-#define MSM_ION_SF_SIZE 0x2800000 /* 40 Mbytes */
-#endif
-#define MSM_ION_MM_FW_SIZE	0xa00000 /* (10MB) */
-#define MSM_ION_MM_SIZE		0x7800000 /* (120MB) */
-#define MSM_ION_QSECOM_SIZE	0x100000 /* (1MB) */
-#define MSM_ION_MFC_SIZE	SZ_8K
-#define MSM_ION_AUDIO_SIZE	0x2B4000
-#define MSM_ION_HEAP_NUM	8
 
 #ifdef CONFIG_KERNEL_PMEM_EBI_REGION
 static unsigned kernel_ebi1_mem_size = MSM_KERNEL_EBI1_MEM_SIZE;
@@ -89,131 +77,22 @@ static int msm_8974_paddr_to_memtype(unsigned int paddr)
 	return MEMTYPE_EBI1;
 }
 
-#ifdef CONFIG_ION_MSM
-static struct ion_cp_heap_pdata cp_mm_ion_pdata = {
-	.permission_type = IPT_TYPE_MM_CARVEOUT,
-	.align = PAGE_SIZE,
-};
-
-static struct ion_cp_heap_pdata cp_mfc_ion_pdata = {
-	.permission_type = IPT_TYPE_MFC_SHAREDMEM,
-	.align = PAGE_SIZE,
-};
-
-static struct ion_co_heap_pdata co_ion_pdata = {
-	.adjacent_mem_id = INVALID_HEAP_ID,
-	.align = PAGE_SIZE,
-};
-
-static struct ion_co_heap_pdata fw_co_ion_pdata = {
-	.adjacent_mem_id = ION_CP_MM_HEAP_ID,
-	.align = SZ_128K,
-};
-
-/**
- * These heaps are listed in the order they will be allocated. Due to
- * video hardware restrictions and content protection the FW heap has to
- * be allocated adjacent (below) the MM heap and the MFC heap has to be
- * allocated after the MM heap to ensure MFC heap is not more than 256MB
- * away from the base address of the FW heap.
- * However, the order of FW heap and MM heap doesn't matter since these
- * two heaps are taken care of by separate code to ensure they are adjacent
- * to each other.
- * Don't swap the order unless you know what you are doing!
- */
-static struct ion_platform_data ion_pdata = {
-	.nr = MSM_ION_HEAP_NUM,
-	.heaps = {
-		{
-			.id	= ION_SYSTEM_HEAP_ID,
-			.type	= ION_HEAP_TYPE_SYSTEM,
-			.name	= ION_VMALLOC_HEAP_NAME,
-		},
-		{
-			.id	= ION_CP_MM_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CP,
-			.name	= ION_MM_HEAP_NAME,
-			.size	= MSM_ION_MM_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &cp_mm_ion_pdata,
-		},
-		{
-			.id	= ION_MM_FIRMWARE_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
-			.name	= ION_MM_FIRMWARE_HEAP_NAME,
-			.size	= MSM_ION_MM_FW_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &fw_co_ion_pdata,
-		},
-		{
-			.id	= ION_CP_MFC_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CP,
-			.name	= ION_MFC_HEAP_NAME,
-			.size	= MSM_ION_MFC_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &cp_mfc_ion_pdata,
-		},
-		{
-			.id	= ION_SF_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
-			.name	= ION_SF_HEAP_NAME,
-			.size	= MSM_ION_SF_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &co_ion_pdata,
-		},
-		{
-			.id	= ION_IOMMU_HEAP_ID,
-			.type	= ION_HEAP_TYPE_IOMMU,
-			.name	= ION_IOMMU_HEAP_NAME,
-		},
-		{
-			.id	= ION_QSECOM_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
-			.name	= ION_QSECOM_HEAP_NAME,
-			.size	= MSM_ION_QSECOM_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &co_ion_pdata,
-		},
-		{
-			.id	= ION_AUDIO_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
-			.name	= ION_AUDIO_HEAP_NAME,
-			.size	= MSM_ION_AUDIO_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = (void *) &co_ion_pdata,
-		},
-	}
-};
-
-static struct platform_device ion_dev = {
-	.name = "ion-msm",
-	.id = 1,
-	.dev = { .platform_data = &ion_pdata },
-};
-
-static void __init reserve_ion_memory(void)
+static void __init reserve_ebi_memory(void)
 {
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_MM_SIZE;
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_MM_FW_SIZE;
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_SF_SIZE;
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_MFC_SIZE;
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_QSECOM_SIZE;
-	msm_8974_reserve_table[MEMTYPE_EBI1].size += MSM_ION_AUDIO_SIZE;
 #ifdef CONFIG_KERNEL_PMEM_EBI_REGION
 	msm_8974_reserve_table[MEMTYPE_EBI1].size += kernel_ebi1_mem_size;
 #endif
 }
-#endif
 
 static struct resource smd_resource[] = {
 	{
 		.name	= "modem_smd_in",
-		.start	= 32 + 17,		/* mss_sw_to_kpss_ipc_irq0  */
+		.start	= 32 + 25,		/* mss_sw_to_kpss_ipc_irq0  */
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		.name	= "modem_smsm_in",
-		.start	= 32 + 18,		/* mss_sw_to_kpss_ipc_irq1  */
+		.start	= 32 + 26,		/* mss_sw_to_kpss_ipc_irq1  */
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
@@ -369,9 +248,7 @@ struct platform_device msm_device_smd_8974 = {
 
 static void __init msm_8974_calculate_reserve_sizes(void)
 {
-#ifdef CONFIG_ION_MSM
-	reserve_ion_memory();
-#endif
+	reserve_ebi_memory();
 }
 
 static struct reserve_info msm_8974_reserve_info __initdata = {
@@ -383,6 +260,7 @@ static struct reserve_info msm_8974_reserve_info __initdata = {
 static void __init msm_8974_early_memory(void)
 {
 	reserve_info = &msm_8974_reserve_info;
+	of_scan_flat_dt(dt_scan_for_memory_reserve, msm_8974_reserve_table);
 }
 
 void __init msm_8974_reserve(void)
@@ -505,6 +383,11 @@ static struct platform_device msm_bus_ocmem_vnoc = {
 	.id    = MSM_BUS_FAB_OCMEM_VNOC,
 };
 
+static struct platform_device msm_fm_platform_init = {
+	.name  = "iris_fm",
+	.id    = -1,
+};
+
 static struct platform_device *msm_bus_8974_devices[] = {
 	&msm_bus_sys_noc,
 	&msm_bus_bimc,
@@ -513,6 +396,7 @@ static struct platform_device *msm_bus_8974_devices[] = {
 	&msm_bus_periph_noc,
 	&msm_bus_config_noc,
 	&msm_bus_ocmem_vnoc,
+	&msm_fm_platform_init,
 };
 
 static void __init msm8974_init_buses(void)
@@ -533,48 +417,9 @@ static void __init msm8974_init_buses(void)
 
 void __init msm_8974_add_devices(void)
 {
-#ifdef CONFIG_ION_MSM
-	platform_device_register(&ion_dev);
-#endif
 	platform_device_register(&msm_device_smd_8974);
 	platform_device_register(&android_usb_device);
-	platform_add_devices(msm_8974_stub_regulator_devices,
-					msm_8974_stub_regulator_devices_len);
 }
-
-static struct clk_lookup msm_clocks_dummy[] = {
-	CLK_DUMMY("xo",		XO_CLK,		NULL,	OFF),
-	CLK_DUMMY("xo",		XO_CLK,		"pil_pronto",		OFF),
-	CLK_DUMMY("core_clk",	BLSP2_UART_CLK,	"msm_serial_hsl.0",	OFF),
-	CLK_DUMMY("iface_clk",	BLSP2_UART_CLK,	"msm_serial_hsl.0",	OFF),
-	CLK_DUMMY("core_clk",	SDC1_CLK,	NULL,			OFF),
-	CLK_DUMMY("iface_clk",	SDC1_P_CLK,	NULL,			OFF),
-	CLK_DUMMY("core_clk",	SDC3_CLK,	NULL,			OFF),
-	CLK_DUMMY("iface_clk",	SDC3_P_CLK,	NULL,			OFF),
-	CLK_DUMMY("phy_clk", NULL, "msm_otg", OFF),
-	CLK_DUMMY("core_clk", NULL, "msm_otg", OFF),
-	CLK_DUMMY("iface_clk", NULL, "msm_otg", OFF),
-	CLK_DUMMY("xo", NULL, "msm_otg", OFF),
-	CLK_DUMMY("dfab_clk",	DFAB_CLK,	NULL, 0),
-	CLK_DUMMY("dma_bam_pclk",	DMA_BAM_P_CLK,	NULL, 0),
-	CLK_DUMMY("mem_clk",	NULL,	NULL, 0),
-	CLK_DUMMY("core_clk",	SPI_CLK,	"spi_qsd.1",	OFF),
-	CLK_DUMMY("iface_clk",	SPI_P_CLK,	"spi_qsd.1",	OFF),
-	CLK_DUMMY("core_clk",	NULL,	"f9966000.i2c", 0),
-	CLK_DUMMY("iface_clk",	NULL,	"f9966000.i2c", 0),
-	CLK_DUMMY("core_clk",	NULL,	"fe12f000.slim",	OFF),
-	CLK_DUMMY("core_clk", "mdp.0", NULL, 0),
-	CLK_DUMMY("core_clk_src", "mdp.0", NULL, 0),
-	CLK_DUMMY("lut_clk", "mdp.0", NULL, 0),
-	CLK_DUMMY("vsync_clk", "mdp.0", NULL, 0),
-	CLK_DUMMY("iface_clk", "mdp.0", NULL, 0),
-	CLK_DUMMY("bus_clk", "mdp.0", NULL, 0),
-};
-
-struct clock_init_data msm_dummy_clock_init_data __initdata = {
-	.table = msm_clocks_dummy,
-	.size = ARRAY_SIZE(msm_clocks_dummy),
-};
 
 /*
  * Used to satisfy dependencies for devices that need to be
@@ -590,12 +435,13 @@ void __init msm_8974_add_drivers(void)
 	msm_lpmrs_module_init();
 	rpm_regulator_smd_driver_init();
 	msm_spm_device_init();
-	regulator_stub_init();
+	krait_power_init();
 	if (machine_is_msm8974_rumi())
-		msm_clock_init(&msm_dummy_clock_init_data);
+		msm_clock_init(&msm8974_rumi_clock_init_data);
 	else
 		msm_clock_init(&msm8974_clock_init_data);
 	msm8974_init_buses();
+	msm_thermal_device_init();
 }
 
 static struct of_device_id irq_match[] __initdata  = {
@@ -604,19 +450,31 @@ static struct of_device_id irq_match[] __initdata  = {
 	{ .compatible = "qcom,spmi-pmic-arb", .data = qpnpint_of_init, },
 	{}
 };
+static struct of_device_id mpm_match[] __initdata = {
+	{.compatible = "qcom,mpm-v2", },
+	{},
+};
 
 void __init msm_8974_init_irq(void)
 {
+	struct device_node *node;
+
 	of_irq_init(irq_match);
+	node = of_find_matching_node(NULL, mpm_match);
+
+	WARN_ON(!node);
+
+	if (node)
+		of_mpm_init(node);
 }
 
 static struct of_dev_auxdata msm_8974_auxdata_lookup[] __initdata = {
-	OF_DEV_AUXDATA("qcom,msm-lsuart-v14", 0xF991F000, \
-			"msm_serial_hsl.0", NULL),
 	OF_DEV_AUXDATA("qcom,hsusb-otg", 0xF9A55000, \
 			"msm_otg", NULL),
 	OF_DEV_AUXDATA("qcom,dwc-usb3-msm", 0xF9200000, \
 			"msm_dwc3", NULL),
+	OF_DEV_AUXDATA("qcom,usb-bam-msm", 0xF9304000, \
+			"usb_bam", NULL),
 	OF_DEV_AUXDATA("qcom,spi-qup-v2", 0xF9924000, \
 			"spi_qsd.1", NULL),
 	OF_DEV_AUXDATA("qcom,spmi-pmic-arb", 0xFC4C0000, \
@@ -635,11 +493,45 @@ static struct of_dev_auxdata msm_8974_auxdata_lookup[] __initdata = {
 	OF_DEV_AUXDATA("qcom,pil-mba",     0xFC820000, "pil-mba", NULL),
 	OF_DEV_AUXDATA("qcom,pil-pronto", 0xFB21B000, \
 			"pil_pronto", NULL),
+	OF_DEV_AUXDATA("arm,coresight-tmc", 0xFC322000, \
+			"coresight-tmc-etr", NULL),
+	OF_DEV_AUXDATA("arm,coresight-tpiu", 0xFC318000, \
+			"coresight-tpiu", NULL),
+	OF_DEV_AUXDATA("qcom,coresight-replicator", 0xFC31C000, \
+			"coresight-replicator", NULL),
+	OF_DEV_AUXDATA("arm,coresight-tmc", 0xFC307000, \
+			"coresight-tmc-etf", NULL),
+	OF_DEV_AUXDATA("arm,coresight-funnel", 0xFC31B000, \
+			"coresight-funnel-merg", NULL),
+	OF_DEV_AUXDATA("arm,coresight-funnel", 0xFC319000, \
+			"coresight-funnel-in0", NULL),
+	OF_DEV_AUXDATA("arm,coresight-funnel", 0xFC31A000, \
+			"coresight-funnel-in1", NULL),
+	OF_DEV_AUXDATA("arm,coresight-funnel", 0xFC345000, \
+			"coresight-funnel-kpss", NULL),
+	OF_DEV_AUXDATA("arm,coresight-funnel", 0xFC364000, \
+			"coresight-funnel-mmss", NULL),
+	OF_DEV_AUXDATA("arm,coresight-stm", 0xFC321000, \
+			"coresight-stm", NULL),
+	OF_DEV_AUXDATA("arm,coresight-etm", 0xFC33C000, \
+			"coresight-etm0", NULL),
+	OF_DEV_AUXDATA("arm,coresight-etm", 0xFC33D000, \
+			"coresight-etm1", NULL),
+	OF_DEV_AUXDATA("arm,coresight-etm", 0xFC33E000, \
+			"coresight-etm2", NULL),
+	OF_DEV_AUXDATA("arm,coresight-etm", 0xFC33F000, \
+			"coresight-etm3", NULL),
 	OF_DEV_AUXDATA("qcom,msm-rng", 0xF9BFF000, \
 			"msm_rng", NULL),
 	OF_DEV_AUXDATA("qcom,qseecom", 0xFE806000, \
 			"qseecom", NULL),
 	OF_DEV_AUXDATA("qcom,mdss_mdp", 0xFD900000, "mdp.0", NULL),
+	OF_DEV_AUXDATA("qcom,msm-tsens", 0xFC4A8000, \
+			"msm-tsens", NULL),
+	OF_DEV_AUXDATA("qcom,qcedev", 0xFD440000, \
+			"qcedev.0", NULL),
+	OF_DEV_AUXDATA("qcom,qcrypto", 0xFD440000, \
+			"qcrypto.0", NULL),
 	{}
 };
 

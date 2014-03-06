@@ -1,8 +1,7 @@
 /* linux/include/asm-arm/arch-msm/dma.h
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+ * Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -189,19 +188,17 @@ int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr);
 #define DMOV_HSUART_GSBI6_RX_CHAN	8
 #define DMOV_HSUART_GSBI6_RX_CRCI	11
 
+#define DMOV_HSUART_GSBI8_TX_CHAN	7
+#define DMOV_HSUART_GSBI8_TX_CRCI	10
+
+#define DMOV_HSUART_GSBI8_RX_CHAN	8
+#define DMOV_HSUART_GSBI8_RX_CRCI	9
+
 #define DMOV_HSUART_GSBI9_TX_CHAN	4
 #define DMOV_HSUART_GSBI9_TX_CRCI	13
 
 #define DMOV_HSUART_GSBI9_RX_CHAN	3
 #define DMOV_HSUART_GSBI9_RX_CRCI	12
-
-#ifdef CONFIG_MSM_GSBI10_UART
-#define DMOV_HSUART_GSBI10_TX_CHAN	10
-#define DMOV_HSUART_GSBI10_TX_CRCI	15
-
-#define DMOV_HSUART_GSBI10_RX_CHAN	11
-#define DMOV_HSUART_GSBI10_RX_CRCI	14
-#endif
 
 #elif defined(CONFIG_ARCH_MSM9615)
 
@@ -272,6 +269,22 @@ int msm_dmov_exec_cmd(unsigned id, unsigned int cmdptr);
 #define DMOV8064_CE_OUT_CHAN       1
 #define DMOV8064_CE_OUT_CRCI       15
 
+#define DMOV8064_TSIF_CHAN         2
+#define DMOV8064_TSIF_CRCI         1
+
+/* channels for APQ8064 SGLTE*/
+#define DMOV_APQ8064_HSUART_GSBI4_TX_CHAN	11
+#define DMOV_APQ8064_HSUART_GSBI4_TX_CRCI	8
+
+#define DMOV_APQ8064_HSUART_GSBI4_RX_CHAN	10
+#define DMOV_APQ8064_HSUART_GSBI4_RX_CRCI	7
+
+/* channels for MPQ8064 */
+#define DMOV_MPQ8064_HSUART_GSBI6_TX_CHAN	7
+#define DMOV_MPQ8064_HSUART_GSBI6_TX_CRCI	6
+
+#define DMOV_MPQ8064_HSUART_GSBI6_RX_CHAN	6
+#define DMOV_MPQ8064_HSUART_GSBI6_RX_CRCI	11
 
 /* no client rate control ifc (eg, ram) */
 #define DMOV_NONE_CRCI        0

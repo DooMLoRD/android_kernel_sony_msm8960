@@ -1,5 +1,5 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,20 +15,16 @@
 #include <linux/interrupt.h>
 #include <linux/mfd/pm8xxx/pm8921.h>
 #include <linux/mfd/pm8xxx/pm8xxx-adc.h>
-#include <linux/mfd/pm8xxx/vibrator.h>
 #include <linux/leds.h>
 #include <linux/leds-pm8xxx.h>
 #include <linux/msm_ssbi.h>
 #include <linux/gpio_event.h>
 #include <linux/gpio_keys.h>
-#include <linux/platform_device.h>
 #include <asm/mach-types.h>
 #include <mach/msm_bus_board.h>
 #include <mach/restart.h>
-#include <mach/pm8921-mic_bias.h>
 #include "devices.h"
 #include "board-8960.h"
-#include "charger-semc_blue.h"
 
 struct pm8xxx_gpio_init {
 	unsigned			gpio;
@@ -394,55 +390,63 @@ static int pm8921_therm_mitigation[] = {
 };
 
 #define MAX_VOLTAGE_MV		4200
+#define V_CUTOFF_MV		3200
 #define CHG_TERM_MA		70
-struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
-	.safety_time		= 512,
-	.ttrkl_time		= 64,
+static struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.update_time		= 30000,
-	.update_time_at_low_bat	= 1000,
 	.max_voltage		= MAX_VOLTAGE_MV,
-	.min_voltage		= 3200,
+	.min_voltage		= V_CUTOFF_MV,
+	.uvd_thresh_voltage	= 4050,
+	.alarm_low_mv		= V_CUTOFF_MV,
+	.alarm_high_mv		= V_CUTOFF_MV + 100,
 	.resume_voltage_delta	= 60,
-	.resume_soc		= 99,
+	.resume_charge_percent	= 99,
 	.term_current		= CHG_TERM_MA,
 	.cool_temp		= 10,
 	.warm_temp		= 45,
-	.hysterisis_temp	= 3,
+	.hysteresis_temp	= 3,
 	.temp_check_period	= 1,
-	.dc_unplug_check	= true,
-	.safe_current		= 1425,
 	.max_bat_chg_current	= 1425,
 	.cool_bat_chg_current	= 1425,
-	.warm_bat_chg_current	= 425,
+	.warm_bat_chg_current	= 350,
 	.cool_bat_voltage	= 4200,
 	.warm_bat_voltage	= 4000,
 	.thermal_mitigation	= pm8921_therm_mitigation,
 	.thermal_levels		= ARRAY_SIZE(pm8921_therm_mitigation),
-	.cold_thr		= PM_SMBC_BATT_TEMP_COLD_THR__HIGH,
-	.hot_thr		= PM_SMBC_BATT_TEMP_HOT_THR__HIGH,
 	.rconn_mohm		= 18,
+	.soc_scaling		= 1,
 	.btc_override		= 1,
 	.btc_override_cold_degc	= 5,
 	.btc_override_hot_degc	= 55,
 	.btc_delay_ms		= 10000,
-	.btc_panic_if_cant_stop_chg = 1,
+	.btc_panic_if_cant_stop_chg	= 1,
+	.safety_time		= 512,
 };
 
 static struct pm8xxx_misc_platform_data pm8xxx_misc_pdata = {
 	.priority		= 0,
 };
 
-struct pm8921_bms_platform_data pm8921_bms_pdata __devinitdata = {
-	.battery_data		= &pm8921_battery_data,
-	.r_sense		= 10,
-	.i_test			= 1000,
-	.v_cutoff			= 3200,
-	.max_voltage_uv         = MAX_VOLTAGE_MV * 1000,
-	.default_rbatt_mohms	= 170,
-	.rconn_mohm		= 30,
+static struct pm8921_bms_platform_data pm8921_bms_pdata __devinitdata = {
+	.battery_type			= BATT_OEM,
+	.r_sense_uohm			= 10000,
+	.v_cutoff			= V_CUTOFF_MV,
+	.max_voltage_uv			= MAX_VOLTAGE_MV * 1000,
+	.rconn_mohm			= 30,
 	.shutdown_soc_valid_limit	= 20,
 	.adjust_soc_low_threshold	= 25,
 	.chg_term_ua			= CHG_TERM_MA * 1000,
+	.normal_voltage_calc_ms		= 20000,
+	.low_voltage_calc_ms		= 1000,
+	.alarm_low_mv			= V_CUTOFF_MV,
+	.alarm_high_mv			= V_CUTOFF_MV + 100,
+	.hold_soc_est			= 3,
+	.low_voltage_detect		= 1,
+	.vbatt_cutoff_retries		= 5,
+	.enable_fcc_learning		= 1,
+	.min_fcc_learning_soc		= 20,
+	.min_fcc_ocv_pc			= 30,
+	.min_fcc_learning_samples	= 5,
 };
 
 #define	PM8921_LC_LED_MAX_CURRENT	4	/* I = 4mA */
@@ -455,8 +459,69 @@ struct pm8921_bms_platform_data pm8921_bms_pdata __devinitdata = {
  */
 #define PM8XXX_PWM_CHANNEL_NONE		-1
 
+static struct led_info pm8921_led_info[] = {
+	[0] = {
+		.name			= "led:battery_charging",
+		.default_trigger	= "battery-charging",
+	},
+	[1] = {
+		.name			= "led:battery_full",
+		.default_trigger	= "battery-full",
+	},
+};
+
+static struct led_platform_data pm8921_led_core_pdata = {
+	.num_leds = ARRAY_SIZE(pm8921_led_info),
+	.leds = pm8921_led_info,
+};
+
+static int pm8921_led0_pwm_duty_pcts[56] = {
+		1, 4, 8, 12, 16, 20, 24, 28, 32, 36,
+		40, 44, 46, 52, 56, 60, 64, 68, 72, 76,
+		80, 84, 88, 92, 96, 100, 100, 100, 98, 95,
+		92, 88, 84, 82, 78, 74, 70, 66, 62, 58,
+		58, 54, 50, 48, 42, 38, 34, 30, 26, 22,
+		14, 10, 6, 4, 1
+};
+
+/*
+ * Note: There is a bug in LPG module that results in incorrect
+ * behavior of pattern when LUT index 0 is used. So effectively
+ * there are 63 usable LUT entries.
+ */
+static struct pm8xxx_pwm_duty_cycles pm8921_led0_pwm_duty_cycles = {
+	.duty_pcts = (int *)&pm8921_led0_pwm_duty_pcts,
+	.num_duty_pcts = ARRAY_SIZE(pm8921_led0_pwm_duty_pcts),
+	.duty_ms = PM8XXX_LED_PWM_DUTY_MS,
+	.start_idx = 1,
+};
+
+static struct pm8xxx_led_config pm8921_led_configs[] = {
+	[0] = {
+		.id = PM8XXX_ID_LED_0,
+		.mode = PM8XXX_LED_MODE_PWM2,
+		.max_current = PM8921_LC_LED_MAX_CURRENT,
+		.pwm_channel = 5,
+		.pwm_period_us = PM8XXX_LED_PWM_PERIOD,
+		.pwm_duty_cycles = &pm8921_led0_pwm_duty_cycles,
+	},
+	[1] = {
+		.id = PM8XXX_ID_LED_1,
+		.mode = PM8XXX_LED_MODE_PWM1,
+		.max_current = PM8921_LC_LED_MAX_CURRENT,
+		.pwm_channel = 4,
+		.pwm_period_us = PM8XXX_LED_PWM_PERIOD,
+	},
+};
+
+static struct pm8xxx_led_platform_data pm8xxx_leds_pdata = {
+		.led_core = &pm8921_led_core_pdata,
+		.configs = pm8921_led_configs,
+		.num_configs = ARRAY_SIZE(pm8921_led_configs),
+};
+
 static struct pm8xxx_ccadc_platform_data pm8xxx_ccadc_pdata = {
-	.r_sense		= 10,
+	.r_sense_uohm		= 10000,
 	.calib_delay_ms		= 600000,
 };
 
@@ -471,12 +536,6 @@ static struct pm8xxx_pwm_platform_data pm8xxx_pwm_pdata = {
 	.dtest_channel	= PM8XXX_PWM_DTEST_CHANNEL_NONE,
 };
 
-#define PM8921_HSED_MIC_BIAS 0xA1
-
-struct pm8921_mic_bias_platform_data pm8921_mic_bias_pdata = {
-	.mic_bias_addr = PM8921_HSED_MIC_BIAS,
-};
-
 static struct pm8921_platform_data pm8921_platform_data __devinitdata = {
 	.irq_pdata		= &pm8xxx_irq_pdata,
 	.gpio_pdata		= &pm8xxx_gpio_pdata,
@@ -488,9 +547,9 @@ static struct pm8921_platform_data pm8921_platform_data __devinitdata = {
 	.charger_pdata		= &pm8921_chg_pdata,
 	.bms_pdata		= &pm8921_bms_pdata,
 	.adc_pdata		= &pm8xxx_adc_pdata,
+	.leds_pdata		= &pm8xxx_leds_pdata,
 	.ccadc_pdata		= &pm8xxx_ccadc_pdata,
 	.pwm_pdata		= &pm8xxx_pwm_pdata,
-	.mic_bias_pdata		= &pm8921_mic_bias_pdata,
 };
 
 static struct msm_ssbi_platform_data msm8960_ssbi_pm8921_pdata __devinitdata = {

@@ -643,8 +643,8 @@ struct mpu_platform_data {
 	__u8 level_shifter;
 	__s8 orientation[GYRO_NUM_AXES * GYRO_NUM_AXES];
 	int (*setup)(struct device *dev, int enable);
-	void (*hw_config)(struct device *dev, int enable);
-	void (*power_mode)(int enable);
+	void (*hw_config)(int enable);
+	void (*power_mode)(struct device *dev, int enable);
 };
 
 #define MPU_IOCTL (0x81) /* Magic number for MPU Iocts */

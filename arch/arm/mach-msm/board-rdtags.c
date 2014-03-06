@@ -20,7 +20,7 @@
 
 struct rdtags_tag_const {
 	const char const key[16];
-	const char const value[32];
+	const char const value[64];
 };
 
 struct rdtags_build_tags {
@@ -53,7 +53,7 @@ static int board_rdtags_init(void)
 	int nbr_tags = 0;
 	int i = 0;
 	int nbrOfElements = sizeof(rdtags_build_info.tag_array) /
-			sizeof(rdtags_build_info.tag_array[0]);
+					sizeof(rdtags_build_info.tag_array[0]);
 
 	for (i = 0; i < nbrOfElements; i++) {
 		if (!rdtags_add_tag_string(

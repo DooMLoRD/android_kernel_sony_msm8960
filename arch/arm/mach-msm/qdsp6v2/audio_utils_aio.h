@@ -1,6 +1,6 @@
 /* Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,7 +24,7 @@
 #include <linux/debugfs.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <asm/ioctls.h>
 #include <asm/atomic.h>
 #include "q6audio_common.h"
@@ -36,6 +36,7 @@
 #define ADRV_STATUS_FSYNC 0x00000008
 #define ADRV_STATUS_PAUSE 0x00000010
 #define AUDIO_DEC_EOS_SET  0x00000001
+#define AUDIO_DEC_EOF_SET  0x00000010
 #define AUDIO_EVENT_NUM		10
 
 #define __CONTAINS(r, v, l) ({                                  \
@@ -210,6 +211,7 @@ long audio_aio_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int audio_aio_fsync(struct file *file, loff_t start, loff_t end, int datasync);
 void audio_aio_async_out_flush(struct q6audio_aio *audio);
 void audio_aio_async_in_flush(struct q6audio_aio *audio);
+void audio_aio_ioport_reset(struct q6audio_aio *audio);
 #ifdef CONFIG_DEBUG_FS
 ssize_t audio_aio_debug_open(struct inode *inode, struct file *file);
 ssize_t audio_aio_debug_read(struct file *file, char __user *buf,

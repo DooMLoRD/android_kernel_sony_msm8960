@@ -2,6 +2,7 @@
  *  linux/kernel/printk.c
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *  Copyright (C) 2012 Sony Mobile Communications AB.
  *
  * Modified to make sys_syslog() more flexible: added commands to
  * return the last 4k of kernel messages, regardless of whether
@@ -939,6 +940,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 
 	p = printk_buf;
+#ifdef CONFIG_LGE_CRASH_HANDLER
+	store_crash_log(p);
+#endif
 
 	/* Read log level and handle special printk prefix */
 	plen = log_prefix(p, &current_log_level, &special);
@@ -1196,6 +1200,24 @@ void resume_console(void)
 	down(&console_sem);
 	console_suspended = 0;
 	console_unlock();
+}
+
+void panic_console(void)
+{
+	/**
+	 * Let's clear lock if it's locked, but only if console is suspended
+	 */
+	if (console_locked && console_suspended) {
+		zap_locks();
+		console_locked = 0;
+	}
+
+	/**
+	 * If suspended, resume console to allow the stored messages to
+	 * be written
+	 */
+	if (console_suspended)
+		resume_console();
 }
 
 static void __cpuinit console_flush(struct work_struct *work)

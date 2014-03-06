@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -127,9 +127,9 @@ static int __devinit msm_rng_enable_hw(struct msm_rng_device *msm_rng_dev)
 					PRNG_HW_ENABLE;
 	/* PRNG H/W is not ON */
 	if (val != PRNG_HW_ENABLE) {
-		val = readl_relaxed(msm_rng_dev->base + PRNG_LFSR_CFG_OFFSET) &
-					PRNG_LFSR_CFG_MASK;
-		val |= PRNG_LFSR_CFG_MASK;
+		val = readl_relaxed(msm_rng_dev->base + PRNG_LFSR_CFG_OFFSET);
+		val &= PRNG_LFSR_CFG_MASK;
+		val |= PRNG_LFSR_CFG_CLOCKS;
 		writel_relaxed(val, msm_rng_dev->base + PRNG_LFSR_CFG_OFFSET);
 
 		/* The PRNG CONFIG register should be first written */
@@ -261,6 +261,6 @@ static void __exit msm_rng_exit(void)
 
 module_exit(msm_rng_exit);
 
-MODULE_AUTHOR("Code Aurora Forum");
+MODULE_AUTHOR("The Linux Foundation");
 MODULE_DESCRIPTION("Qualcomm MSM Random Number Driver");
 MODULE_LICENSE("GPL v2");

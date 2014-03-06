@@ -25,6 +25,10 @@
 #include "u_ether.h"
 #include "rndis.h"
 
+static bool rndis_multipacket_dl_disable;
+module_param(rndis_multipacket_dl_disable, bool, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(rndis_multipacket_dl_disable,
+	"Disable RNDIS Multi-packet support in DownLink");
 
 /*
  * This function is an RNDIS Ethernet port -- a Microsoft protocol that's
@@ -408,8 +412,13 @@ static void rndis_response_available(void *_rndis)
 static void rndis_response_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct f_rndis			*rndis = req->context;
-	struct usb_composite_dev	*cdev = rndis->port.func.config->cdev;
+	struct usb_composite_dev	*cdev;
 	int				status = req->status;
+
+	if (!rndis->port.func.config || !rndis->port.func.config->cdev)
+		return;
+	else
+		cdev = rndis->port.func.config->cdev;
 
 	/* after TX:
 	 *  - USB_CDC_GET_ENCAPSULATED_RESPONSE (ep0/control)
@@ -447,21 +456,21 @@ static void rndis_response_complete(struct usb_ep *ep, struct usb_request *req)
 static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct f_rndis			*rndis = req->context;
-	struct usb_composite_dev	*cdev = rndis->port.func.config->cdev;
+	struct usb_composite_dev	*cdev;
 	int				status;
 	rndis_init_msg_type		*buf;
+
+	if (!rndis->port.func.config || !rndis->port.func.config->cdev)
+		return;
+	else
+		cdev = rndis->port.func.config->cdev;
 
 	/* received RNDIS command from USB_CDC_SEND_ENCAPSULATED_COMMAND */
 //	spin_lock(&dev->lock);
 	status = rndis_msg_parser(rndis->config, (u8 *) req->buf);
-	if (status < 0) {
-		if (cdev)
-			ERROR(cdev, "RNDIS command error %d, %d/%d\n",
-				status, req->actual, req->length);
-		else
-			pr_err("RNDIS command error %d, %d/%d\n",
-				status, req->actual, req->length);
-	}
+	if (status < 0)
+		ERROR(cdev, "RNDIS command error %d, %d/%d\n",
+			status, req->actual, req->length);
 
 	buf = (rndis_init_msg_type *)req->buf;
 
@@ -470,13 +479,12 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 			rndis->port.multi_pkt_xfer = 1;
 		else
 			rndis->port.multi_pkt_xfer = 0;
-		if (cdev)
-			DBG(cdev, "%s: MaxTransferSize: %d : Multi_pkt_txr: %s\n",
+		DBG(cdev, "%s: MaxTransferSize: %d : Multi_pkt_txr: %s\n",
 				__func__, buf->MaxTransferSize,
 				rndis->port.multi_pkt_xfer ? "enabled" :
 							    "disabled");
-		else
-			pr_err("RNDIS cdev is null\n");
+		if (rndis_multipacket_dl_disable)
+			rndis->port.multi_pkt_xfer = 0;
 	}
 //	spin_unlock(&dev->lock);
 }
@@ -842,7 +850,6 @@ rndis_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	rndis_deregister(rndis->config);
 	rndis_exit();
-	rndis_string_defs[0].id = 0;
 
 	if (gadget_is_superspeed(c->cdev->gadget))
 		usb_free_descriptors(f->ss_descriptors);

@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,7 +23,6 @@
 #include <linux/hwmon.h>
 #include <linux/module.h>
 #include <linux/debugfs.h>
-#include <linux/wakelock.h>
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/hwmon-sysfs.h>
@@ -125,6 +123,7 @@
 #define PM8XXX_ADC_PA_THERM_VREG_UA_LOAD		100000
 #define PM8XXX_ADC_HWMON_NAME_LENGTH			32
 #define PM8XXX_ADC_BTM_INTERVAL_MAX			0x14
+#define PM8XXX_ADC_COMPLETION_TIMEOUT			(2 * HZ)
 
 struct pm8xxx_adc {
 	struct device				*dev;
@@ -143,11 +142,10 @@ struct pm8xxx_adc {
 	struct work_struct			cool_work;
 	uint32_t				mpp_base;
 	struct device				*hwmon;
-	struct wake_lock			adc_wakelock;
+	struct msm_xo_voter			*adc_voter;
 	int					msm_suspend_check;
 	struct pm8xxx_adc_amux_properties	*conv;
 	struct pm8xxx_adc_arb_btm_param		batt;
-	struct msm_xo_voter			*voter;
 	struct sensor_device_attribute		sens_attr[0];
 };
 
@@ -226,7 +224,6 @@ static int32_t pm8xxx_adc_arb_cntrl(uint32_t arb_cntrl,
 			pr_err("PM8xxx ADC request made after suspend_noirq "
 					"with channel: %d\n", channel);
 		data_arb_cntrl |= PM8XXX_ADC_ARB_USRP_CNTRL1_EN_ARB;
-		wake_lock(&adc_pmic->adc_wakelock);
 	}
 
 	/* Write twice to the CNTRL register for the arbiter settings
@@ -245,8 +242,7 @@ static int32_t pm8xxx_adc_arb_cntrl(uint32_t arb_cntrl,
 		INIT_COMPLETION(adc_pmic->adc_rslt_completion);
 		rc = pm8xxx_writeb(adc_pmic->dev->parent,
 			PM8XXX_ADC_ARB_USRP_CNTRL1, data_arb_cntrl);
-	} else
-		wake_unlock(&adc_pmic->adc_wakelock);
+	}
 
 	return 0;
 }
@@ -296,14 +292,34 @@ static int32_t pm8xxx_adc_patherm_power(bool on)
 	return rc;
 }
 
+static int32_t pm8xxx_adc_xo_vote(bool on)
+{
+	struct pm8xxx_adc *adc_pmic = pmic_adc;
+
+	if (on)
+		msm_xo_mode_vote(adc_pmic->adc_voter, MSM_XO_MODE_ON);
+	else
+		msm_xo_mode_vote(adc_pmic->adc_voter, MSM_XO_MODE_OFF);
+
+	return 0;
+}
+
 static int32_t pm8xxx_adc_channel_power_enable(uint32_t channel,
 							bool power_cntrl)
 {
 	int rc = 0;
 
-	switch (channel)
+	switch (channel) {
 	case ADC_MPP_1_AMUX8:
 		rc = pm8xxx_adc_patherm_power(power_cntrl);
+		break;
+	case CHANNEL_DIE_TEMP:
+	case CHANNEL_MUXOFF:
+		rc = pm8xxx_adc_xo_vote(power_cntrl);
+		break;
+	default:
+		break;
+	}
 
 	return rc;
 }
@@ -737,7 +753,23 @@ uint32_t pm8xxx_adc_read(enum pm8xxx_adc_channels channel,
 		goto fail;
 	}
 
-	wait_for_completion(&adc_pmic->adc_rslt_completion);
+	rc = wait_for_completion_timeout(&adc_pmic->adc_rslt_completion,
+						PM8XXX_ADC_COMPLETION_TIMEOUT);
+	if (!rc) {
+		u8 data_arb_usrp_cntrl1 = 0;
+		rc = pm8xxx_adc_read_reg(PM8XXX_ADC_ARB_USRP_CNTRL1,
+					&data_arb_usrp_cntrl1);
+		if (rc < 0)
+			goto fail;
+		if (data_arb_usrp_cntrl1 == (PM8XXX_ADC_ARB_USRP_CNTRL1_EOC |
+					PM8XXX_ADC_ARB_USRP_CNTRL1_EN_ARB))
+			pr_debug("End of conversion status set\n");
+		else {
+			pr_err("EOC interrupt not received\n");
+			rc = -EINVAL;
+			goto fail;
+		}
+	}
 
 	rc = pm8xxx_adc_read_adc_code(&result->adc_code);
 	if (rc) {
@@ -1107,14 +1139,8 @@ hwmon_err_sens:
 static int pm8xxx_adc_suspend_noirq(struct device *dev)
 {
 	struct pm8xxx_adc *adc_pmic = pmic_adc;
-	int rc;
 
 	adc_pmic->msm_suspend_check = 1;
-
-	rc = msm_xo_mode_vote(adc_pmic->voter, MSM_XO_MODE_OFF);
-	if (rc)
-		pr_err("%s failed to vote for TCXO D0 buffer%d\n",
-			__func__, rc);
 
 	return 0;
 }
@@ -1122,14 +1148,8 @@ static int pm8xxx_adc_suspend_noirq(struct device *dev)
 static int pm8xxx_adc_resume_noirq(struct device *dev)
 {
 	struct pm8xxx_adc *adc_pmic = pmic_adc;
-	int rc;
 
 	adc_pmic->msm_suspend_check = 0;
-
-	rc = msm_xo_mode_vote(adc_pmic->voter, MSM_XO_MODE_ON);
-	if (rc)
-		pr_err("%s failed to vote for TCXO D0 buffer%d\n",
-			__func__, rc);
 
 	return 0;
 }
@@ -1149,7 +1169,7 @@ static int __devexit pm8xxx_adc_teardown(struct platform_device *pdev)
 	struct pm8xxx_adc *adc_pmic = pmic_adc;
 	int i;
 
-	wake_lock_destroy(&adc_pmic->adc_wakelock);
+	msm_xo_put(adc_pmic->adc_voter);
 	platform_set_drvdata(pdev, NULL);
 	pmic_adc = NULL;
 	if (!pa_therm) {
@@ -1249,22 +1269,8 @@ static int __devinit pm8xxx_adc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to request btm irq\n");
 	}
 
-	adc_pmic->voter = msm_xo_get(MSM_XO_TCXO_D0, "pm8xxx-adc");
-	if (IS_ERR(adc_pmic->voter)) {
-		rc = PTR_ERR(adc_pmic->voter);
-		pr_err("failed to request voter with error %d\n", rc);
-		adc_pmic->voter = NULL;
-		return rc;
-	}
-	rc = msm_xo_mode_vote(adc_pmic->voter, MSM_XO_MODE_ON);
-	if (rc)
-		pr_err("%s failed to vote for TCXO D0 buffer%d\n",
-			__func__, rc);
-
 	disable_irq_nosync(adc_pmic->btm_cool_irq);
 	platform_set_drvdata(pdev, adc_pmic);
-	wake_lock_init(&adc_pmic->adc_wakelock, WAKE_LOCK_SUSPEND,
-					"pm8xxx_adc_wakelock");
 	adc_pmic->msm_suspend_check = 0;
 	pmic_adc = adc_pmic;
 
@@ -1281,6 +1287,14 @@ static int __devinit pm8xxx_adc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to initialize pm8xxx hwmon adc\n");
 	}
 	adc_pmic->hwmon = hwmon_device_register(adc_pmic->dev);
+
+	if (adc_pmic->adc_voter == NULL) {
+		adc_pmic->adc_voter = msm_xo_get(MSM_XO_TCXO_D0, "pmic_xoadc");
+		if (IS_ERR(adc_pmic->adc_voter)) {
+			dev_err(&pdev->dev, "Failed to get XO vote\n");
+			return PTR_ERR(adc_pmic->adc_voter);
+		}
+	}
 
 	pa_therm = regulator_get(adc_pmic->dev, "pa_therm");
 	if (IS_ERR(pa_therm)) {

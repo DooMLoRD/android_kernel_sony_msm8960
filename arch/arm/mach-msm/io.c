@@ -3,7 +3,7 @@
  * MSM7K, QSD io support
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -300,6 +300,7 @@ static struct map_desc msm_8974_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(QGIC_CPU, MSM8974),
 	MSM_CHIP_DEVICE(APCS_GCC, MSM8974),
 	MSM_CHIP_DEVICE(TLMM, MSM8974),
+	MSM_CHIP_DEVICE(MPM2_PSHOLD, MSM8974),
 	{
 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
 		.length =   MSM_SHARED_RAM_SIZE,

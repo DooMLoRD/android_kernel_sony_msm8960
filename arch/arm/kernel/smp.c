@@ -211,7 +211,7 @@ void __ref cpu_die(void)
 	mb();
 
 	/* Tell __cpu_die() that this CPU is now safe to dispose of */
-	RCU_NONIDLE(complete(&cpu_died));
+	complete(&cpu_died);
 
 	/*
 	 * actual CPU shutdown procedure is at least platform (if not
@@ -549,7 +549,8 @@ void smp_send_all_cpu_backtrace(void)
 	dump_stack();
 
 	pr_info("\nsending IPI to all other CPUs:\n");
-	smp_cross_call(&backtrace_mask, IPI_CPU_BACKTRACE);
+	if (!cpus_empty(backtrace_mask))
+		smp_cross_call(&backtrace_mask, IPI_CPU_BACKTRACE);
 
 	/* Wait for up to 10 seconds for all other CPUs to do the backtrace */
 	for (i = 0; i < 10 * 1000; i++) {

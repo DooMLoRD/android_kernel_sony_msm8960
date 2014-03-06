@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,7 +36,7 @@ struct snd_msm {
 	struct msm_audio *prtd;
 	unsigned volume;
 };
-static struct snd_msm compressed_audio = {NULL, 0x2000} ;
+static struct snd_msm compressed_audio = {NULL, 0x20002000} ;
 
 static struct audio_locks the_locks;
 
@@ -279,10 +279,8 @@ static void populate_codec_list(struct compr_audio *compr,
 static int msm_compr_open(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct compr_audio *compr;
 	struct msm_audio *prtd;
-	int ret = 0;
 	struct asm_softpause_params softpause = {
 		.enable = SOFT_PAUSE_ENABLE,
 		.period = SOFT_PAUSE_PERIOD,
@@ -294,6 +292,7 @@ static int msm_compr_open(struct snd_pcm_substream *substream)
 		.step = SOFT_VOLUME_STEP,
 		.rampingcurve = SOFT_VOLUME_CURVE_LINEAR,
 	};
+	int ret = 0;
 
 	/* Capture path */
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
@@ -319,9 +318,6 @@ static int msm_compr_open(struct snd_pcm_substream *substream)
 	pr_info("%s: session ID %d\n", __func__, prtd->audio_client->session);
 
 	prtd->session_id = prtd->audio_client->session;
-	msm_pcm_routing_reg_phy_stream(soc_prtd->dai_link->be_id,
-			prtd->session_id, substream->stream);
-
 	prtd->cmd_ack = 1;
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0,
@@ -341,7 +337,7 @@ static int msm_compr_open(struct snd_pcm_substream *substream)
 	populate_codec_list(compr, runtime);
 	runtime->private_data = compr;
 	compressed_audio.prtd =  &compr->prtd;
-	ret = compressed_set_volume(compressed_audio.volume);
+	ret = compressed_set_volume(0);
 	if (ret < 0)
 		pr_err("%s : Set Volume failed : %d", __func__, ret);
 
@@ -363,8 +359,9 @@ int compressed_set_volume(unsigned volume)
 {
 	int rc = 0;
 	if (compressed_audio.prtd && compressed_audio.prtd->audio_client) {
-		rc = q6asm_set_volume(compressed_audio.prtd->audio_client,
-								 volume);
+		rc = q6asm_set_lrgain(compressed_audio.prtd->audio_client,
+						(volume >> 16) & 0xFFFF,
+						volume & 0xFFFF);
 		if (rc < 0) {
 			pr_err("%s: Send Volume command failed rc=%d\n",
 						__func__, rc);
@@ -460,6 +457,7 @@ static int msm_compr_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
+	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct compr_audio *compr = runtime->private_data;
 	struct msm_audio *prtd = &compr->prtd;
 	struct snd_dma_buffer *dma_buf = &substream->dma_buffer;
@@ -477,6 +475,9 @@ static int msm_compr_hw_params(struct snd_pcm_substream *substream,
 		pr_err("%s: Session out open failed\n", __func__);
 		return -ENOMEM;
 	}
+	msm_pcm_routing_reg_phy_stream(soc_prtd->dai_link->be_id,
+			prtd->session_id, substream->stream);
+
 	ret = q6asm_set_io_mode(prtd->audio_client, ASYNC_IO_MODE);
 	if (ret < 0) {
 		pr_err("%s: Set IO mode failed\n", __func__);
@@ -524,8 +525,8 @@ static int msm_compr_ioctl(struct snd_pcm_substream *substream,
 		pr_debug("SNDRV_COMPRESS_TSTAMP\n");
 
 		memset(&tstamp, 0x0, sizeof(struct snd_compr_tstamp));
-		timestamp = q6asm_get_session_time(prtd->audio_client);
-		if (timestamp < 0) {
+		rc = q6asm_get_session_time(prtd->audio_client, &timestamp);
+		if (rc < 0) {
 			pr_err("%s: Get Session Time return value =%lld\n",
 				__func__, timestamp);
 			return -EAGAIN;
@@ -621,7 +622,11 @@ static struct snd_soc_platform_driver msm_soc_platform = {
 
 static __devinit int msm_compr_probe(struct platform_device *pdev)
 {
-	pr_info("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
+	if (pdev->dev.of_node)
+		dev_set_name(&pdev->dev, "%s", "msm-compr-dsp");
+
+	dev_info(&pdev->dev, "%s: dev name %s\n",
+			 __func__, dev_name(&pdev->dev));
 	return snd_soc_register_platform(&pdev->dev,
 				   &msm_soc_platform);
 }
@@ -632,10 +637,17 @@ static int msm_compr_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id msm_compr_dt_match[] = {
+	{.compatible = "qcom,msm-compr-dsp"},
+	{}
+};
+MODULE_DEVICE_TABLE(of, msm_compr_dt_match);
+
 static struct platform_driver msm_compr_driver = {
 	.driver = {
 		.name = "msm-compr-dsp",
 		.owner = THIS_MODULE,
+		.of_match_table = msm_compr_dt_match,
 	},
 	.probe = msm_compr_probe,
 	.remove = __devexit_p(msm_compr_remove),

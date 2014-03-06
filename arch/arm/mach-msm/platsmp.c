@@ -1,7 +1,7 @@
 /*
  *  Copyright (C) 2002 ARM Ltd.
  *  All Rights Reserved
- *  Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+ *  Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -14,6 +14,7 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/regulator/krait-regulator.h>
 
 #include <asm/hardware/gic.h>
 #include <asm/cacheflush.h>
@@ -41,6 +42,19 @@ extern void msm_secondary_startup(void);
  */
 volatile int pen_release = -1;
 
+/*
+ * Write pen_release in a way that is guaranteed to be visible to all
+ * observers, irrespective of whether they're taking part in coherency
+ * or not.  This is necessary for the hotplug code to work reliably.
+ */
+static void __cpuinit write_pen_release(int val)
+{
+	pen_release = val;
+	smp_wmb();
+	__cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
+	outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
+}
+
 static DEFINE_SPINLOCK(boot_lock);
 
 void __cpuinit platform_secondary_init(unsigned int cpu)
@@ -53,6 +67,12 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 	 * for us: do so
 	 */
 	gic_secondary_init(0);
+
+	/*
+	 * let the primary processor know we're out of the
+	 * pen, then head off into the C entry point
+	 */
+	write_pen_release(-1);
 
 	/*
 	 * Synchronise with the boot thread.
@@ -83,14 +103,6 @@ static int __cpuinit krait_release_secondary_sim(unsigned long base, int cpu)
 	if (!base_ptr)
 		return -ENODEV;
 
-	if (machine_is_msm8960_sim() || machine_is_msm8960_rumi3()) {
-		writel_relaxed(0x10, base_ptr+0x04);
-		writel_relaxed(0x80, base_ptr+0x04);
-	}
-
-	if (machine_is_apq8064_sim())
-		writel_relaxed(0xf0000, base_ptr+0x04);
-
 	if (machine_is_msm8974_sim()) {
 		writel_relaxed(0x800, base_ptr+0x04);
 		writel_relaxed(0x3FFF, base_ptr+0x14);
@@ -111,16 +123,45 @@ static int __cpuinit krait_release_secondary(unsigned long base, int cpu)
 
 	writel_relaxed(0x109, base_ptr+0x04);
 	writel_relaxed(0x101, base_ptr+0x04);
+	mb();
 	ndelay(300);
 
 	writel_relaxed(0x121, base_ptr+0x04);
+	mb();
+	udelay(2);
+
+	writel_relaxed(0x120, base_ptr+0x04);
+	mb();
+	udelay(2);
+
+	writel_relaxed(0x100, base_ptr+0x04);
+	mb();
+	udelay(100);
+
+	writel_relaxed(0x180, base_ptr+0x04);
+	mb();
+	iounmap(base_ptr);
+	return 0;
+}
+
+static int __cpuinit krait_release_secondary_p3(unsigned long base, int cpu)
+{
+	void *base_ptr = ioremap_nocache(base + (cpu * 0x10000), SZ_4K);
+	if (!base_ptr)
+		return -ENODEV;
+
+	secondary_cpu_hs_init(base_ptr);
+
+	writel_relaxed(0x021, base_ptr+0x04);
+	mb();
 	udelay(2);
 
 	writel_relaxed(0x020, base_ptr+0x04);
+	mb();
 	udelay(2);
 
 	writel_relaxed(0x000, base_ptr+0x04);
-	udelay(100);
+	mb();
 
 	writel_relaxed(0x080, base_ptr+0x04);
 	mb();
@@ -135,16 +176,15 @@ static int __cpuinit release_secondary(unsigned int cpu)
 	if (cpu_is_msm8x60())
 		return scorpion_release_secondary();
 
-	if (machine_is_msm8960_sim() || machine_is_msm8960_rumi3() ||
-	    machine_is_apq8064_sim())
-		return krait_release_secondary_sim(0x02088000, cpu);
-
 	if (machine_is_msm8974_sim())
 		return krait_release_secondary_sim(0xf9088000, cpu);
 
-	if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
-	    cpu_is_apq8064() || cpu_is_msm8627())
+	if (soc_class_is_msm8960() || soc_class_is_msm8930() ||
+	    soc_class_is_apq8064())
 		return krait_release_secondary(0x02088000, cpu);
+
+	if (cpu_is_msm8974())
+		return krait_release_secondary_p3(0xf9088000, cpu);
 
 	WARN(1, "unknown CPU case in release_secondary\n");
 	return -EINVAL;
@@ -161,7 +201,7 @@ static int cold_boot_flags[] = {
 int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
 	int ret;
-	int flag = 0;
+	unsigned int flag = 0;
 	unsigned long timeout;
 
 	pr_debug("Starting secondary CPU %d\n", cpu);
@@ -175,8 +215,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		__WARN();
 
 	if (per_cpu(cold_boot_done, cpu) == false) {
-		ret = scm_set_boot_addr((void *)
-					virt_to_phys(msm_secondary_startup),
+		ret = scm_set_boot_addr(virt_to_phys(msm_secondary_startup),
 					flag);
 		if (ret == 0)
 			release_secondary(cpu);
@@ -200,9 +239,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 * Note that "pen_release" is the hardware CPU ID, whereas
 	 * "cpu" is Linux's internal ID.
 	 */
-	pen_release = cpu_logical_map(cpu);
-	__cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
-	outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
+	write_pen_release(cpu_logical_map(cpu));
 
 	/*
 	 * Send the secondary CPU a soft interrupt, thereby causing
@@ -217,8 +254,6 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		if (pen_release == -1)
 			break;
 
-		dmac_inv_range((void *)&pen_release,
-			       (void *)(&pen_release+sizeof(pen_release)));
 		udelay(10);
 	}
 

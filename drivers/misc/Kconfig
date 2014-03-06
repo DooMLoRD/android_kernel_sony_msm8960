@@ -603,13 +603,27 @@ config PMIC8XXX_VIBRATOR
 	  on the PM8XXX chips. The vibrator is controlled using the
 	  timed output class.
 
+config ANDROID_VIBRATOR
+	bool "Android vibrator support"
+	depends on ANDROID_TIMED_OUTPUT
+	default n
+	help
+	  This option enalbes device driver support for Android Vibrator driver.
+	  Some functions should be given by platform data for enable PWM, Motor IC, etc.
+
+config TOUCHSENSE_VIBRATOR
+	bool "Immersion Touchsense vibrator support"
+	help
+	  This option enables device driver support for Immersion Touchsense
+	  vibrator.
+
 config VIBRATOR_LC898300
-        tristate "VIBRATOR Support for LC898300 I2C chips"
-        depends on ANDROID_TIMED_OUTPUT && I2C
-        default n
-        help
-          This option enables device driver support for the vibrator
-          on the LC898300 chips accessed via the I2C bus.
+	tristate "VIBRATOR Support for LC898300 I2C chips"
+	depends on ANDROID_TIMED_OUTPUT && I2C
+	default n
+	help
+	  This option enables device driver support for the vibrator
+	  on the LC898300 chips accessed via the I2C bus.
 
 config PMIC8XXX_NFC
 	tristate "Qualcomm PM8XXX support for Near Field Communication"
@@ -617,6 +631,16 @@ config PMIC8XXX_NFC
 	help
 	  Qualcomm PM8XXX chips have a module to support NFC (Near Field
 	  Communication). This option enables the driver to support it.
+
+config LM3561
+	tristate "LED driver for LM3561"
+	default n
+	depends on I2C
+	help
+	  This option enables support for LM3561
+	  led controller.
+	  The LM3561 is the flash led that works
+	  with camera.
 
 config PMIC8XXX_UPL
 	tristate "Qualcomm PM8XXX support for User Programmable Logic"
@@ -643,14 +667,6 @@ config LM3560_FLASHLED
 	help
 	  This option enables support for LM3560
 	  led controller with lm3560 driver.
-
-config LM3561_FLASHLED
-	tristate "LED driver for LM3561"
-	default n
-	depends on I2C
-	help
-	  This option enables support for LM3561
-	  led controller with lm3561 driver.
 
 config QSEECOM
 	tristate "Qualcomm Secure Execution Communicator driver"
@@ -684,40 +700,23 @@ config USB_HSIC_SMSC_HUB
 	  This adds support for connecting devices like mouse in HSIC
 	  Host mode.
 
-config AMSS_LASTLOG
-	bool "amsslog from previous boot as proc entry"
-	default n
-	depends on ARCH_MSM
+config BU52031NVX
+	tristate "Cradle BU52031NVX support"
+	depends on MFD_PM8XXX
 	help
-	  This will enable /proc/last_amsslog after a reboot that
-	  happened because of a crash or a normal restart.
-	  Because the copying of the amsslog is done just before a
-	  restart the amss_lastlog entry will not exist after a HWWD.
+	  This option enables device driver support for the cradle
+	  on the PM8XXX chips. The cradle is controlled using the
+	  PM8XXX gpio.
 
-config SONY_ONESEG_TUNER_PM
-	tristate "SONY Oneseg tuner pm driver"
-	default n
-	depends on GENERIC_GPIO
+config BU52031NVX_POUCHDETECT
+	tristate "Cradle BU52031NVX_POUCHDETECT support"
+	depends on BU52031NVX
 	help
-	  Select this module to enable SONY Oneseg Tuner PM Driver.
-
-config SONY_FELICA_SUPPORT
-	bool "Enable FeliCa support"
-	default n
-	help
-	  This option enables support for FeliCa.
-
-config SONY_FELICA_NFC_SUPPORT
-	bool "Enable FeliCa/NFC combination device support"
-	default n
-	depends on SONY_FELICA_SUPPORT
-	help
-	  This option enables support for FeliCa/NFC combination device.
+	  depends on BU52031NVX
 
 config RAMDUMP_TAGS
 	bool "Ramdump tags to communicate between kernel and ramdump"
 	default n
-	depends on !RAMDUMP_CRASH_LOGS
 	help
 	  This option enables a driver which can be interacted with to
 	  supply the ramdumper with more information about the current
@@ -727,6 +726,14 @@ config RAMDUMP_TAGS
 	  aside to hold the information which will later be used by
 	  the ramdump application.
 
+config RAMDUMP_CRASH_LOGS
+	bool "amsslog as proc entries"
+	default n
+	depends on ARCH_MSM
+	help
+	  This will enable /proc/last_amsslog
+	  on a reboot after crash.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
@@ -735,6 +742,7 @@ source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
+source "drivers/misc/slimport_anx7808/Kconfig"
 source "drivers/misc/mpu3050/Kconfig"
 source "drivers/misc/mpu6050/Kconfig"
 

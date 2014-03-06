@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -253,12 +253,19 @@ static int qpnpint_irq_set_type(struct irq_data *d, unsigned int flow_type)
 	return rc;
 }
 
+static int qpnpint_irq_set_wake(struct irq_data *d, unsigned int on)
+{
+	return 0;
+}
+
 static struct irq_chip qpnpint_chip = {
 	.name		= "qpnp-int",
 	.irq_mask	= qpnpint_irq_mask,
 	.irq_mask_ack	= qpnpint_irq_mask_ack,
 	.irq_unmask	= qpnpint_irq_unmask,
 	.irq_set_type	= qpnpint_irq_set_type,
+	.irq_set_wake	= qpnpint_irq_set_wake,
+	.flags		= IRQCHIP_MASK_ON_SUSPEND,
 };
 
 static int qpnpint_init_irq_data(struct q_chip_data *chip_d,

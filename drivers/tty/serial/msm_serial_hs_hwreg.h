@@ -1,7 +1,6 @@
 /* drivers/serial/msm_serial_hs_hwreg.h
  *
- * Copyright (c) 2007-2009, 2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+ * Copyright (c) 2007-2009, 2012, The Linux Foundation. All rights reserved.
  * 
  * All source code in this file is licensed under the following license
  * except where indicated.
@@ -54,7 +53,6 @@ enum msm_hsl_regs {
 	UARTDM_BCR,
 	UARTDM_TXFS,
 	UARTDM_RXFS,
-	UARTDM_IRDA,
 	UARTDM_LAST,
 };
 
@@ -205,9 +203,5 @@ enum msm_hsl_regs {
 /* Field definitions for UART_DM_DMEN*/
 #define UARTDM_TX_DM_EN_BMSK 0x1
 #define UARTDM_RX_DM_EN_BMSK 0x2
-
-/* Field definitions for UART_DM_IRDA*/
-#define UARTDM_IRDA_INVERT_RX_BMSK	BIT(1)
-#define UARTDM_IRDA_EN_BMSK		BIT(0)
 
 #endif /* MSM_SERIAL_HS_HWREG_H */

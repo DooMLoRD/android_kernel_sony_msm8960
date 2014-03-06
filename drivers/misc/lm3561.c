@@ -1,9 +1,9 @@
 /* drivers/misc/lm3561.c
  *
- * Copyright (C) 2012 Sony Ericsson Mobile Communications AB.
  * Copyright (C) 2012 Sony Mobile Communications AB.
  *
- * Author: Angela Fox <angela.fox@sonyericsson.com>
+ * Author: Angela Fox <angela.fox@sonymobile.com>
+ * Author: Aleksej Makarov <aleksej.makarov@sonymobile.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -18,8 +18,12 @@
 #include <linux/delay.h>
 #include <linux/lm3561.h>
 #include <linux/kernel.h>
+#include <linux/mutex.h>
+#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 
+static int autosuspend_delay_ms = 1200;
+module_param(autosuspend_delay_ms, int, S_IRUGO);
 /*
  *************************************************************************
  * - Value declaration
@@ -29,20 +33,45 @@
 /*
  * LM3561 Register address
  */
-#define LM3561_REG_ENABLE		0x10
-#define LM3561_REG_GPIO			0x20
-#define LM3561_REG_TORCH_BRIGHT		0xA0
-#define LM3561_REG_FLASH_BRIGHT		0xB0
-#define LM3561_REG_FLASH_DURATION	0xC0
-#define LM3561_REG_FLAG			0xD0
-#define LM3561_REG_CFG_1		0xE0
-#define LM3561_REG_CFG_2		0xF0
+enum lm3561_reg {
+	LM3561_REG_ENABLE,
+	LM3561_REG_INDICATOR,
+	LM3561_REG_GPIO,
+	LM3561_REG_VIN_MONITOR,
+	LM3561_REG_TORCH_BRIGHT,
+	LM3561_REG_FLASH_BRIGHT,
+	LM3561_REG_FLASH_DURATION,
+	LM3561_REG_FLAG,
+	LM3561_REG_CFG_1,
+	LM3561_REG_CFG_2,
+	LM3561_REG_NUM
+};
+
+static const u8 reg_map[] = {
+	[LM3561_REG_ENABLE]         = 0x10,
+	[LM3561_REG_INDICATOR]      = 0x12,
+	[LM3561_REG_GPIO]           = 0x20,
+	[LM3561_REG_VIN_MONITOR]    = 0x80,
+	[LM3561_REG_TORCH_BRIGHT]   = 0xA0,
+	[LM3561_REG_FLASH_BRIGHT]   = 0xB0,
+	[LM3561_REG_FLASH_DURATION] = 0xC0,
+	[LM3561_REG_FLAG]           = 0xD0,
+	[LM3561_REG_CFG_1]          = 0xE0,
+	[LM3561_REG_CFG_2]          = 0xF0,
+};
+
+enum duty_reason {
+	DUTY_ON_NOTHING,
+	DUTY_ON_SYNC,
+	DUTY_ON_TORCH,
+	DUTY_ON_PRIVACY,
+};
 
 /*
  * Mask/Value of Enable register
  */
 /* LM3561 Enable bits[1:0] */
-#define LM3561_ENABLE_EN_MASK			(0x07 << 0)
+#define LM3561_ENABLE_EN_MASK			(0x03 << 0)
 #define LM3561_ENABLE_EN_SHUTDOWN		(0x00 << 0)
 #define LM3561_ENABLE_EN_INDICATOR_MODE		(0x01 << 0)
 #define LM3561_ENABLE_EN_TORCH_MODE		(0x02 << 0)
@@ -58,9 +87,9 @@
  * Mask/Value of Configuration register 1
  */
 /* LM3561 TX2,TX1,NTC,Polarity,STROBE Input Enable */
-#define LM3561_CFG1_STROBE_INPUT_MASK		(0x7f)
-#define LM3561_CFG1_STROBE_INPUT_DISABLE	(0x00)
-#define LM3561_CFG1_STROBE_INPUT_ENABLE		(0x7f)
+#define LM3561_CFG1_STROBE_INPUT_MASK		(0x01 << 2)
+#define LM3561_CFG1_STROBE_INPUT_DISABLE	(0x00 << 2)
+#define LM3561_CFG1_STROBE_INPUT_ENABLE		(0x01 << 2)
 
 /*
  * LM3561 Mask of Torch Brightness Register
@@ -99,28 +128,24 @@
 struct led_limits {
 	unsigned long torch_current_min;
 	unsigned long torch_current_max;
-	unsigned long torch_current_step;
 	unsigned long flash_current_min;
 	unsigned long flash_current_max;
-	unsigned long flash_current_step;
 	unsigned long flash_duration_min;
 	unsigned long flash_duration_max;
 };
 
-/*
- * Min/Max/step torch/flash values and also min/max duration values.
- * TODO! Room for improvement! Some values also defined in macros in:
- * /vendor/semc/hardware/libcameralight/chips/lm3561_flash.c!
- */
 const struct led_limits lm3561_limits = {
 	18000,
 	149600,
-	18800,
 	36000,
 	600000,
-	37600,
 	32000,
-	1024000,
+	1024000
+};
+
+struct lm3561_reg_shadow {
+	u8 val;
+	u8 updated;
 };
 
 struct lm3561_drv_data {
@@ -133,26 +158,32 @@ struct lm3561_drv_data {
 	int torch_current_shift;
 	int flash_current_shift;
 	int strobe_trigger_shift;
+	bool on_duty;
+	struct mutex lock;
+	struct lm3561_reg_shadow shadow[LM3561_REG_NUM];
 };
 
 static int lm3561_get_reg_data(struct lm3561_drv_data *data,
 				u8 addr, u8 *value)
 {
 	s32 result;
+	u8 reg = reg_map[addr];
 
 	result = i2c_smbus_read_i2c_block_data(
 					data->client,
-					addr,
+					reg,
 					1,
 					value);
 	if (result < 0) {
 		dev_err(&data->client->dev,
 			"%s(): Failed to read register(0x%02x). "
 				"errno=%d\n",
-				__func__, addr, result);
+				__func__, reg, result);
 		return -EIO;
 	}
-
+	data->shadow[addr].val = *value;
+	dev_dbg(&data->client->dev, "%s read register(0x%02x) data(0x%02x)\n",
+		__func__, reg, *value);
 	return 0;
 }
 
@@ -161,18 +192,19 @@ static int lm3561_set_reg_data(struct lm3561_drv_data *data,
 {
 	u8 current_value;
 	s32 result;
+	u8 reg = reg_map[addr];
 
 	if (mask != 0xFF) {
 		result = i2c_smbus_read_i2c_block_data(
 						data->client,
-						addr,
+						reg,
 						1,
 						&current_value);
 		if (result < 0) {
 			dev_err(&data->client->dev,
 				"%s(): Failed to read register(0x%02x)"
 					". errno=%d\n",
-					__func__, addr, result);
+					__func__, reg, result);
 			return -EIO;
 		}
 		value = (current_value & ~mask) | value;
@@ -180,39 +212,60 @@ static int lm3561_set_reg_data(struct lm3561_drv_data *data,
 
 	/* For debug-purpose, get info on what is written to chip */
 	dev_dbg(&data->client->dev,
-		"%s(): addr:0x%02x, value:0x%02x\n",
-		__func__, addr, value);
+		"%s write register(0x%02x) data(0x%02x)\n",
+		__func__, reg, value);
 
 	result = i2c_smbus_write_i2c_block_data(
 					data->client,
-					addr,
+					reg,
 					1,
 					&value);
 	if (result < 0) {
 		dev_err(&data->client->dev,
 			"%s(): Failed to write register(0x%02x). "
 				"errno=%d\n",
-				__func__, addr, result);
+				__func__, reg, result);
 		return -EIO;
 	}
-
+	data->shadow[addr].val = value;
+	data->shadow[addr].updated = 1;
 	return 0;
+}
+
+static int lm3561_sync_shadow(struct lm3561_drv_data *data)
+{
+	unsigned i;
+	s32 rc;
+
+	for (i = 0; i < ARRAY_SIZE(data->shadow); i++) {
+		if (data->shadow[i].updated) {
+			rc = i2c_smbus_write_i2c_block_data(data->client,
+					reg_map[i], 1, &data->shadow[i].val);
+			if (rc) {
+				dev_err(&data->client->dev, "error writing reg 0x%02x\n",
+					reg_map[i]);
+				break;
+			}
+			dev_dbg(&data->client->dev, "sync reg 0x%02x<=0x%02x\n",
+					reg_map[i], data->shadow[i].val);
+		}
+	}
+	return rc;
 }
 
 static int lm3561_set_flash_sync(struct lm3561_drv_data *data,
 				enum lm3561_sync_state setting)
 {
-	if (setting == LM3561_SYNC_ON) {
+	if (setting == LM3561_SYNC_ON)
 		return lm3561_set_reg_data(data,
 					   LM3561_REG_CFG_1,
-					   LM3561_CFG_1_MASK,
+					   LM3561_CFG1_STROBE_INPUT_MASK,
 					   LM3561_CFG1_STROBE_INPUT_ENABLE);
-	} else {
+	else
 		return lm3561_set_reg_data(data,
 					   LM3561_REG_CFG_1,
-					   LM3561_CFG_1_MASK,
+					   LM3561_CFG1_STROBE_INPUT_MASK,
 					   LM3561_CFG1_STROBE_INPUT_DISABLE);
-	}
 }
 
 static int lm3561_check_status(struct lm3561_drv_data *data, u8 *return_status)
@@ -245,18 +298,17 @@ static int lm3561_torch_mode(struct lm3561_drv_data *data,
 	int result;
 
 
-	if (setting) {
+	if (setting)
 		result = lm3561_set_reg_data(data,
 					LM3561_REG_ENABLE,
 					LM3561_ENABLE_EN_MASK,
 					LM3561_ENABLE_EN_TORCH_MODE);
 
-	} else {
+	else
 		result = lm3561_set_reg_data(data,
 					LM3561_REG_ENABLE,
 					LM3561_ENABLE_EN_MASK,
 					LM3561_ENABLE_EN_SHUTDOWN);
-	}
 
 	return result;
 }
@@ -267,17 +319,16 @@ static int lm3561_flash_mode(struct lm3561_drv_data *data,
 	int result;
 
 
-	if (setting) {
+	if (setting)
 		result = lm3561_set_reg_data(data,
 					LM3561_REG_ENABLE,
 					LM3561_ENABLE_EN_MASK,
 					LM3561_ENABLE_EN_FLASH_MODE);
-	} else {
+	else
 		result = lm3561_set_reg_data(data,
 					LM3561_REG_ENABLE,
 					LM3561_ENABLE_EN_MASK,
 					LM3561_ENABLE_EN_SHUTDOWN);
-	}
 
 	return result;
 }
@@ -294,9 +345,8 @@ static int lm3561_get_torch_current(struct lm3561_drv_data *data,
 	if (result)
 		return result;
 
-	*get_current = ((reg_current & LM3561_TORCH_BRIGHT_MASK)
-		* lm3561_limits.torch_current_step * leds
-		+ lm3561_limits.torch_current_min * leds);
+	*get_current = ((reg_current & 0x07) + 1)
+		* lm3561_limits.torch_current_min * leds;
 
 	return result;
 }
@@ -329,8 +379,8 @@ static int lm3561_set_torch_current(struct lm3561_drv_data *data,
 
 	/* Convert current value to register value (Round-down fraction) */
 	current_bits_value =
-		(request_current - lm3561_limits.torch_current_min * leds)
-		/ (lm3561_limits.torch_current_step * leds);
+		request_current	/
+		(lm3561_limits.torch_current_min * leds)  - 1;
 
 	current_bits_value = (current_bits_value << data->torch_current_shift)
 		| current_bits_value;
@@ -353,9 +403,8 @@ static int lm3561_get_flash_current(struct lm3561_drv_data *data,
 	if (result)
 		return result;
 
-	*get_current = ((reg_current & LM3561_FLASH_BRIGHT_MASK)
-		* lm3561_limits.flash_current_step * leds
-		+ lm3561_limits.flash_current_min * leds);
+	*get_current = ((reg_current & 0x0f) + 1)
+		* lm3561_limits.flash_current_min * leds;
 
 	return result;
 }
@@ -385,8 +434,8 @@ static int lm3561_set_flash_current(struct lm3561_drv_data *data,
 	}
 	/* Convert current value to register value (Round-down fraction) */
 	current_bits_value =
-		(flash_current - lm3561_limits.flash_current_min * leds)
-		/ (lm3561_limits.flash_current_step * leds);
+		flash_current /
+		(lm3561_limits.flash_current_min * leds) - 1;
 
 	current_bits_value = (current_bits_value << data->flash_current_shift)
 		| current_bits_value;
@@ -460,7 +509,7 @@ static int lm3561_init_enable_register(struct lm3561_drv_data *data,
 
 	result = lm3561_set_reg_data(data,
 				     LM3561_REG_ENABLE,
-				     LM3561_ENABLE_EN_MASK
+				     LM3561_STROBE_MASK
 				     | (1 << STROBE_TRIGGER_SHIFT),
 				     value);
 	return result;
@@ -473,7 +522,7 @@ static int lm3561_init_cfg1_register(struct lm3561_drv_data *data,
 
 	result = lm3561_set_reg_data(data,
 				LM3561_REG_CFG_1,
-				LM3561_CFG_1_MASK,
+				LM3561_CFG1_STROBE_INPUT_MASK,
 				LM3561_CFG1_STROBE_INPUT_ENABLE);
 	if (result)
 		return result;
@@ -511,6 +560,13 @@ static int lm3561_chip_init(struct lm3561_drv_data *data,
  * - Sysfs operations
  ****************************************************************************
  */
+static int pm_enable_lock(struct lm3561_drv_data *data)
+{
+	int rc;
+	mutex_lock(&data->lock);
+	rc = data->on_duty ? 0 : pm_runtime_get_sync(&data->client->dev);
+	return rc > 0 ? 0 : rc;
+}
 
 static ssize_t attr_torch_enable_show(struct device *dev,
 					struct device_attribute *attr,
@@ -520,8 +576,12 @@ static ssize_t attr_torch_enable_show(struct device *dev,
 	u8 value;
 	int result;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_reg_data(data, LM3561_REG_ENABLE, &value);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -540,10 +600,10 @@ static ssize_t attr_torch_enable_store(struct device *dev,
 	unsigned long enable;
 	int result;
 
-	result = strict_strtoul(buf, 10, &enable);
+	result = kstrtoul(buf, 10, &enable);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
@@ -554,13 +614,22 @@ static ssize_t attr_torch_enable_store(struct device *dev,
 				__func__, enable);
 		return -EINVAL;
 	}
-
-	result = lm3561_torch_mode(data, (unsigned)enable);
-
+	if (enable && data->on_duty == DUTY_ON_TORCH) {
+		dev_dbg(&data->client->dev, "%s: already enabled\n", __func__);
+		return size;
+	}
+	result = pm_enable_lock(data);
 	if (result)
-		return result;
-
-	return size;
+		goto err;
+	result = lm3561_torch_mode(data, (unsigned)enable);
+	data->on_duty = !result && enable ? DUTY_ON_TORCH : DUTY_ON_NOTHING;
+	if (!data->on_duty) {
+		pm_runtime_mark_last_busy(&data->client->dev);
+		pm_runtime_put_autosuspend(&data->client->dev);
+	}
+err:
+	mutex_unlock(&data->lock);
+	return result ? result : size;
 }
 
 static ssize_t attr_torch_current_show(struct device *dev,
@@ -571,8 +640,12 @@ static ssize_t attr_torch_current_show(struct device *dev,
 	int result;
 	unsigned long torch_current;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_torch_current(data, &torch_current);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result != 0)
 		return result;
 
@@ -587,16 +660,20 @@ static ssize_t attr_torch_current_store(struct device *dev,
 	unsigned long torch_current;
 	int result;
 
-	result = strict_strtoul(buf, 10, &torch_current);
+	result = kstrtoul(buf, 10, &torch_current);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_set_torch_current(data, torch_current);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -611,8 +688,12 @@ static ssize_t attr_flash_enable_show(struct device *dev,
 	u8 value;
 	int result;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_reg_data(data, LM3561_REG_ENABLE, &value);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -631,27 +712,33 @@ static ssize_t attr_flash_enable_store(struct device *dev,
 	unsigned long enable;
 	int result;
 
-	result = strict_strtoul(buf, 10, &enable);
+	result = kstrtoul(buf, 10, &enable);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
 
 	if (1 < enable) {
 		dev_err(&data->client->dev,
-			"%s(): 1 < enable, enable=%d\n",
+			"%s(): 1 < enable, enable=%ld\n",
 				__func__, enable);
 		return -EINVAL;
 	}
-
+	mutex_lock(&data->lock);
+	if (data->on_duty == DUTY_ON_NOTHING)
+		result = pm_runtime_get_sync(&data->client->dev);
+	else
+		data->on_duty = DUTY_ON_NOTHING;
+	mutex_unlock(&data->lock);
+	if (result < 0)
+		goto err;
 	result = lm3561_flash_mode(data, (unsigned)enable);
-
-	if (result)
-		return result;
-
-	return size;
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
+err:
+	return result ? result : size;
 }
 
 static ssize_t attr_flash_current_show(struct device *dev,
@@ -663,8 +750,12 @@ static ssize_t attr_flash_current_show(struct device *dev,
 	int result;
 	unsigned long flash_current;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_flash_current(data, &flash_current);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result != 0)
 		return result;
 
@@ -679,16 +770,20 @@ static ssize_t attr_flash_current_store(struct device *dev,
 	unsigned long flash_current;
 	int result = 0;
 
-	result = strict_strtoul(buf, 10, &flash_current);
+	result = kstrtoul(buf, 10, &flash_current);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_set_flash_current(data, flash_current);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -703,7 +798,12 @@ static ssize_t attr_flash_duration_show(struct device *dev,
 	int result;
 	unsigned long flash_duration;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_flash_duration(data, &flash_duration);
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result != 0)
 		return result;
 
@@ -718,16 +818,20 @@ static ssize_t attr_flash_duration_store(struct device *dev,
 	unsigned long flash_duration;
 	int result;
 
-	result = strict_strtoul(buf, 10, &flash_duration);
+	result = kstrtoul(buf, 10, &flash_duration);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_set_flash_duration(data, flash_duration);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -742,7 +846,12 @@ static ssize_t attr_flash_sync_enable_show(struct device *dev,
 	int result;
 	u8 reg_cfg1;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_get_reg_data(data, LM3561_REG_CFG_1, &reg_cfg1);
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 	reg_cfg1 &= LM3561_CFG1_STROBE_INPUT_MASK;
@@ -758,28 +867,37 @@ static ssize_t attr_flash_sync_enable_store(struct device *dev,
 	unsigned long enable;
 	int result;
 
-	result = strict_strtoul(buf, 10, &enable);
+	result = kstrtoul(buf, 10, &enable);
 	if (result) {
 		dev_err(&data->client->dev,
-			"%s(): strtoul failed, result=%d\n",
+			"%s(): kstrtoul failed, result=%d\n",
 				__func__, result);
 		return -EINVAL;
 	}
 
 	if (1 < enable) {
 		dev_err(&data->client->dev,
-			"%s(): 1 < enable, enable=%lu\n",
+			"%s(): 1 < enable, enable=%ld\n",
 				__func__, enable);
 		return -EINVAL;
 	}
-
+	if (enable && data->on_duty == DUTY_ON_SYNC) {
+		dev_dbg(&data->client->dev, "%s: already enabled\n", __func__);
+		return size;
+	}
+	result = pm_enable_lock(data);
+	if (result)
+		goto err;
 	result = lm3561_set_flash_sync(data,
 			       enable ? LM3561_SYNC_ON : LM3561_SYNC_OFF);
-
-	if (result)
-		return result;
-
-	return size;
+	data->on_duty = !result && enable ? DUTY_ON_SYNC : DUTY_ON_NOTHING;
+	if (!data->on_duty) {
+		pm_runtime_mark_last_busy(&data->client->dev);
+		pm_runtime_put_autosuspend(&data->client->dev);
+	}
+err:
+	mutex_unlock(&data->lock);
+	return result ? result : size;
 }
 
 static ssize_t attr_status_show(struct device *dev,
@@ -789,8 +907,12 @@ static ssize_t attr_status_show(struct device *dev,
 	int result;
 	u8 status;
 
+	result = pm_runtime_get_sync(&data->client->dev);
+	if (result < 0)
+		return result;
 	result = lm3561_check_status(data, &status);
-
+	pm_runtime_mark_last_busy(&data->client->dev);
+	pm_runtime_put_autosuspend(&data->client->dev);
 	if (result)
 		return result;
 
@@ -854,41 +976,30 @@ static int __devinit lm3561_probe(struct i2c_client *client,
 	struct lm3561_drv_data *data;
 	int result;
 
-	dev_info(&client->dev, "%s\n", __func__);
+	dev_dbg(&client->dev, "%s\n", __func__);
 
 	if (!pdata) {
-		dev_err(&data->client->dev,
+		dev_err(&client->dev,
 			"%s(): failed during init",
 				__func__);
 		return -EINVAL;
 	}
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_I2C_BLOCK)) {
-		dev_err(&data->client->dev,
+		dev_err(&client->dev,
 			"%s(): failed during i2c_check_functionality",
-				__func__);
+			__func__);
 		return -EIO;
 	}
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data) {
-		dev_err(&data->client->dev,
-			"%s(): failed during kzalloc",
-				__func__);
+		dev_err(&client->dev, "%s(): failed during kzalloc", __func__);
 		return -ENOMEM;
 	}
 
 	dev_set_drvdata(&client->dev, data);
-
 	data->client = client;
-
-	result = pdata->hw_enable();
-	if (result) {
-		dev_err(&client->dev,
-			"%s: Failed to HW Enable.\n", __func__);
-		goto err_setup;
-	}
-
 	data->led_nums = 1;
 	data->torch_current_shift = 0;
 	data->flash_current_shift = 0;
@@ -904,17 +1015,31 @@ static int __devinit lm3561_probe(struct i2c_client *client,
 			"%s(): current_limit(%luuA) is invalid\n",
 			__func__, pdata->current_limit);
 		result = -EINVAL;
-		goto err_chip_init;
+		goto err_init;
 	}
 
+	result = pdata->platform_init ? pdata->platform_init(&client->dev, 1)
+			: 0;
+	if (result) {
+		dev_err(&client->dev,
+			"%s: Failed to HW Enable.\n", __func__);
+		goto err_init;
+	}
+
+	mutex_init(&data->lock);
+	pm_runtime_set_active(&client->dev);
+	pm_runtime_enable(&client->dev);
+	pm_suspend_ignore_children(&client->dev, true);
+
+	result = pdata->power ? pdata->power(&client->dev, true) : 0;
+
+	if (result < 0)
+		goto err_setup;
 	result = lm3561_chip_init(data, pdata);
 	if (result) {
-		dev_err(&data->client->dev,
-			"%s(): chip init failed",
-				__func__);
+		dev_err(&client->dev, "%s:chip init error\n", __func__);
 		goto err_chip_init;
 	}
-
 	result = lm3561_create_sysfs_interfaces(&client->dev);
 	if (result) {
 		dev_err(&data->client->dev,
@@ -922,14 +1047,19 @@ static int __devinit lm3561_probe(struct i2c_client *client,
 				__func__);
 		goto err_chip_init;
 	}
-
+	pm_runtime_set_autosuspend_delay(&client->dev, autosuspend_delay_ms);
+	pm_runtime_use_autosuspend(&client->dev);
 	dev_info(&data->client->dev, "%s: loaded\n", __func__);
-
 	return 0;
 
 err_chip_init:
-	pdata->hw_disable();
+	if (pdata->power)
+		pdata->power(&client->dev, false);
 err_setup:
+	pm_runtime_disable(&client->dev);
+	if (pdata->platform_init)
+		pdata->platform_init(&client->dev, 0);
+err_init:
 	dev_set_drvdata(&client->dev, NULL);
 	kfree(data);
 	dev_err(&client->dev,
@@ -944,9 +1074,15 @@ static int __devexit lm3561_remove(struct i2c_client *client)
 	struct lm3561_platform_data *pdata = client->dev.platform_data;
 
 	remove_sysfs_interfaces(&client->dev);
-	pdata->hw_disable();
+	pm_runtime_disable(&client->dev);
+	if (pdata->power)
+		pdata->power(&client->dev, false);
+	if (pdata->platform_init)
+		pdata->platform_init(&client->dev, 0);
 	kfree(data);
+
 	return 0;
+
 }
 
 #ifdef CONFIG_SUSPEND
@@ -966,7 +1102,7 @@ static int lm3561_suspend(struct device *dev)
 		goto exit_suspend;
 	}
 
-	result = pdata->hw_disable();
+	result = pdata->power ? pdata->power(dev, false) : 0;
 	if (result) {
 		dev_err(dev, "%s: Failed to HW Disable.\n", __func__);
 		goto exit_suspend;
@@ -976,7 +1112,7 @@ static int lm3561_suspend(struct device *dev)
 		 "%s: Suspending LM3561 driver.\n", __func__);
 
 exit_suspend:
-	return result;
+	return result ? -EBUSY : 0;
 }
 
 static int lm3561_resume(struct device *dev)
@@ -985,14 +1121,13 @@ static int lm3561_resume(struct device *dev)
 	struct lm3561_platform_data *pdata = data->client->dev.platform_data;
 	int result;
 
-	result = pdata->hw_enable();
+	result = pdata->power ? pdata->power(dev, true) : 0;
 	if (result) {
 		dev_err(dev, "%s: Failed to HW Enable.\n", __func__);
 		goto exit_resume;
 	}
-
 	dev_info(dev, "%s: Reinit lm3561 chip.\n", __func__);
-	result = lm3561_chip_init(data, pdata);
+	result = lm3561_sync_shadow(data);
 	if (result) {
 		dev_err(dev, "%s:chip init error\n", __func__);
 		goto exit_resume;
@@ -1000,18 +1135,62 @@ static int lm3561_resume(struct device *dev)
 
 	dev_info(&data->client->dev,
 		 "%s: Resuming LM3561 driver.\n", __func__);
-
 exit_resume:
-	return result;
+	return result ? -EBUSY : 0;
 }
+
+static int lm3561_idle(struct device *dev)
+{
+	pm_request_autosuspend(dev);
+	return 0;
+}
+
 #else
 #define lm3561_suspend NULL
 #define lm3561_resume NULL
+#define lm3561_idle NULL
+#endif
+
+#ifdef CONFIG_PM_SLEEP
+static int lm3561_suspend_sleep(struct device *dev)
+{
+	int rc;
+	struct lm3561_drv_data *data = dev_get_drvdata(dev);
+
+	if (pm_runtime_status_suspended(dev)) {
+		dev_dbg(dev, "%s: runtime-suspended.\n", __func__);
+		return 0;
+	}
+	rc = lm3561_suspend(dev);
+	if (!rc) {
+		pm_runtime_disable(dev);
+		pm_runtime_set_suspended(dev);
+		pm_runtime_enable(dev);
+	}
+	data->on_duty = DUTY_ON_NOTHING;
+	dev_dbg(dev, "%s: suspended (%d)\n", __func__, rc);
+	return rc;
+
+}
+
+static int lm3561_resume_sleep(struct device *dev)
+{
+	int rc = 0;
+
+	if (!pm_runtime_status_suspended(dev))
+		rc = lm3561_resume(dev);
+	dev_dbg(dev, "%s: resumed (%d)\n", __func__, rc);
+	return rc;
+
+}
+#else
+#define lm3561_suspend_sleep NULL
+#define lm3561_resume_sleep NULL
 #endif
 
 static const struct dev_pm_ops lm3561_pm = {
-	.suspend = lm3561_suspend,
-	.resume = lm3561_resume,
+	 SET_SYSTEM_SLEEP_PM_OPS(lm3561_suspend_sleep, lm3561_resume_sleep)
+	 SET_RUNTIME_PM_OPS(lm3561_suspend, lm3561_resume, lm3561_idle)
 };
 
 static const struct i2c_device_id lm3561_id[] = {
@@ -1046,3 +1225,4 @@ module_exit(lm3561_exit);
 MODULE_AUTHOR("Angela Fox <angela.fox@sonyericsson.com>");
 MODULE_DESCRIPTION("LM3561 I2C LED driver");
 MODULE_LICENSE("GPL");
+

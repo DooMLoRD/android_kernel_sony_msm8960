@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include <linux/proc_fs.h>
 #include <linux/spinlock.h>
 #include <linux/cpu.h>
+#include <linux/hrtimer.h>
 #include <mach/rpm.h>
 #include <mach/msm_iomap.h>
 #include <asm/mach-types.h>
@@ -37,6 +38,7 @@
 enum {
 	MSM_RPMRS_DEBUG_OUTPUT = BIT(0),
 	MSM_RPMRS_DEBUG_BUFFER = BIT(1),
+	MSM_RPMRS_DEBUG_EVENT_TIMER = BIT(2),
 };
 
 static int msm_rpmrs_debug_mask;
@@ -891,8 +893,8 @@ s32 msm_cpuidle_get_deep_idle_latency(void)
 }
 
 static void *msm_rpmrs_lowest_limits(bool from_idle,
-		enum msm_pm_sleep_mode sleep_mode, uint32_t latency_us,
-		uint32_t sleep_us, uint32_t *power)
+		enum msm_pm_sleep_mode sleep_mode,
+		struct msm_pm_time_params *time_param, uint32_t *power)
 {
 	unsigned int cpu = smp_processor_id();
 	struct msm_rpmrs_level *best_level = NULL;
@@ -900,6 +902,8 @@ static void *msm_rpmrs_lowest_limits(bool from_idle,
 	bool gpio_detectable = false;
 	int i;
 	uint32_t pwr;
+	uint32_t next_wakeup_us = time_param->sleep_us;
+	bool modify_event_timer;
 
 	if (sleep_mode == MSM_PM_SLEEP_MODE_POWER_COLLAPSE) {
 		irqs_detectable = msm_mpm_irqs_detectable(from_idle);
@@ -909,16 +913,32 @@ static void *msm_rpmrs_lowest_limits(bool from_idle,
 	for (i = 0; i < msm_rpmrs_level_count; i++) {
 		struct msm_rpmrs_level *level = &msm_rpmrs_levels[i];
 
+		modify_event_timer = false;
+
 		if (!level->available)
 			continue;
 
 		if (sleep_mode != level->sleep_mode)
 			continue;
 
-		if (latency_us < level->latency_us)
+		if (time_param->latency_us < level->latency_us)
 			continue;
 
-		if (sleep_us <= level->time_overhead_us)
+		if (time_param->next_event_us &&
+				time_param->next_event_us < level->latency_us)
+			continue;
+
+		if (time_param->next_event_us) {
+			if ((time_param->next_event_us < time_param->sleep_us)
+			|| ((time_param->next_event_us - level->latency_us) <
+				time_param->sleep_us)) {
+				modify_event_timer = true;
+				next_wakeup_us = time_param->next_event_us -
+						level->latency_us;
+			}
+		}
+
+		if (next_wakeup_us <= level->time_overhead_us)
 			continue;
 
 		if (!msm_rpmrs_irqs_detectable(&level->rs_limits,
@@ -927,21 +947,22 @@ static void *msm_rpmrs_lowest_limits(bool from_idle,
 
 		if ((MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE == sleep_mode)
 			|| (MSM_PM_SLEEP_MODE_POWER_COLLAPSE == sleep_mode))
-			if (!cpu && msm_rpm_local_request_is_outstanding())
-					break;
-
-
-		if (sleep_us <= 1) {
+			if (!cpu && msm_rpm_local_request_is_outstanding()) {
+				if (MSM_RPMRS_DEBUG_OUTPUT & msm_rpmrs_debug_mask)
+					pr_info(" RPM Request is outstanding\n");
+				break;
+			}
+		if (next_wakeup_us <= 1) {
 			pwr = level->energy_overhead;
-		} else if (sleep_us <= level->time_overhead_us) {
-			pwr = level->energy_overhead / sleep_us;
-		} else if ((sleep_us >> 10) > level->time_overhead_us) {
+		} else if (next_wakeup_us <= level->time_overhead_us) {
+			pwr = level->energy_overhead / next_wakeup_us;
+		} else if ((next_wakeup_us >> 10) > level->time_overhead_us) {
 			pwr = level->steady_state_power;
 		} else {
 			pwr = level->steady_state_power;
 			pwr -= (level->time_overhead_us *
-					level->steady_state_power)/sleep_us;
-			pwr += level->energy_overhead / sleep_us;
+				level->steady_state_power)/next_wakeup_us;
+			pwr += level->energy_overhead / next_wakeup_us;
 		}
 
 		if (!best_level ||
@@ -951,6 +972,12 @@ static void *msm_rpmrs_lowest_limits(bool from_idle,
 			best_level = level;
 			if (power)
 				*power = pwr;
+			if (modify_event_timer && best_level->latency_us > 1)
+				time_param->modified_time_us =
+					time_param->next_event_us -
+							best_level->latency_us;
+			else
+				time_param->modified_time_us = 0;
 		}
 	}
 
@@ -968,7 +995,7 @@ static int msm_rpmrs_enter_sleep(uint32_t sclk_count, void *limits,
 			return rc;
 
 		if (msm_rpmrs_use_mpm(limits))
-			msm_mpm_enter_sleep(from_idle);
+			msm_mpm_enter_sleep(sclk_count, from_idle);
 	}
 
 	rc = msm_rpmrs_flush_L2(limits, notify_rpm);
@@ -1106,8 +1133,8 @@ static struct msm_pm_sleep_ops msm_rpmrs_ops = {
 
 static int __init msm_rpmrs_l2_init(void)
 {
-	if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
-	    cpu_is_apq8064() || cpu_is_msm8627()) {
+	if (soc_class_is_msm8960() || soc_class_is_msm8930() ||
+	    soc_class_is_apq8064()) {
 
 		msm_pm_set_l2_flush_flag(0);
 

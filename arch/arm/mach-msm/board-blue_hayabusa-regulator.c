@@ -14,6 +14,7 @@
 #include <linux/regulator/pm8xxx-regulator.h>
 #include <linux/regulator/msm-gpio-regulator.h>
 #include <mach/rpm-regulator.h>
+#include <mach/socinfo.h>
 
 #include "board-8960.h"
 
@@ -33,10 +34,9 @@ VREG_CONSUMERS(L2) = {
 	REGULATOR_SUPPLY("dsi_pll_vdda",	"mdp.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_camera_imx074.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_camera_ov2720.0"),
-#if defined(CONFIG_SONY_CAM_MAIN_V4L2) || defined(CONFIG_SONY_CAM_SUB_V4L2)
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.1"),
-#endif
+	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.2"),
 };
 VREG_CONSUMERS(L3) = {
 	REGULATOR_SUPPLY("8921_l3",		NULL),
@@ -69,6 +69,8 @@ VREG_CONSUMERS(L9) = {
 	REGULATOR_SUPPLY("gyro_vdd",		"12-0068"),
 	REGULATOR_SUPPLY("acc_vdd",		"12-0018"),
 	REGULATOR_SUPPLY("mag_vdd",		"12-000c"),
+	REGULATOR_SUPPLY("vdd",			"3-0024"),
+	REGULATOR_SUPPLY("vdd_ana",		"3-004a"),
 };
 VREG_CONSUMERS(L10) = {
 	REGULATOR_SUPPLY("8921_l10",		NULL),
@@ -77,35 +79,38 @@ VREG_CONSUMERS(L10) = {
 };
 VREG_CONSUMERS(L11) = {
 	REGULATOR_SUPPLY("8921_l11",		NULL),
-	REGULATOR_SUPPLY("cam_vana",		"msm_camera_imx074.0"),
-	REGULATOR_SUPPLY("cam_vana",		"msm_camera_ov2720.0"),
-#if defined(CONFIG_SONY_CAM_MAIN_V4L2) || defined(CONFIG_SONY_CAM_SUB_V4L2)
 	REGULATOR_SUPPLY("cam_vana",		"4-001a"),
+	REGULATOR_SUPPLY("cam_vana",		"4-0010"),
+	REGULATOR_SUPPLY("cam_vana",		"4-006c"),
 	REGULATOR_SUPPLY("cam_vana",		"4-0048"),
-#endif
+	REGULATOR_SUPPLY("cam_vana",		"4-0020"),
+	REGULATOR_SUPPLY("cam_vana",		"4-0034"),
 };
 VREG_CONSUMERS(L12) = {
 	REGULATOR_SUPPLY("8921_l12",		NULL),
-	REGULATOR_SUPPLY("cam_vdig",		"msm_camera_imx074.0"),
-	REGULATOR_SUPPLY("cam_vdig",		"msm_camera_ov2720.0"),
-#ifdef CONFIG_SONY_CAM_MAIN_V4L2
 	REGULATOR_SUPPLY("cam_vdig",		"4-001a"),
-#endif
+	REGULATOR_SUPPLY("cam_vdig",		"4-0010"),
+	REGULATOR_SUPPLY("cam_vdig",		"4-006c"),
+	REGULATOR_SUPPLY("cam_vdig",		"4-0048"),
+	REGULATOR_SUPPLY("cam_vdig",		"4-0020"),
+	REGULATOR_SUPPLY("cam_vdig",		"4-0034"),
 };
 VREG_CONSUMERS(L14) = {
 	REGULATOR_SUPPLY("8921_l14",		NULL),
 	REGULATOR_SUPPLY("pa_therm",		"pm8xxx-adc"),
+	REGULATOR_SUPPLY("vreg_xoadc",		"pm8921-charger"),
 };
 VREG_CONSUMERS(L15) = {
 	REGULATOR_SUPPLY("8921_l15",		NULL),
 };
 VREG_CONSUMERS(L16) = {
-	REGULATOR_SUPPLY("8921_l16",            NULL),
-	REGULATOR_SUPPLY("cam_vaf",		"msm_camera_imx074.0"),
-	REGULATOR_SUPPLY("cam_vaf",		"msm_camera_ov2720.0"),
-#if defined(CONFIG_SONY_CAM_MAIN_V4L2) || defined(CONFIG_SONY_CAM_SUB_V4L2)
+	REGULATOR_SUPPLY("8921_l16",		NULL),
 	REGULATOR_SUPPLY("cam_vaf",		"4-001a"),
-#endif
+	REGULATOR_SUPPLY("cam_vaf",		"4-0010"),
+	REGULATOR_SUPPLY("cam_vaf",		"4-006c"),
+	REGULATOR_SUPPLY("cam_vaf",		"4-0048"),
+	REGULATOR_SUPPLY("cam_vaf",		"4-0020"),
+	REGULATOR_SUPPLY("cam_vaf",		"4-0034"),
 };
 VREG_CONSUMERS(L17) = {
 	REGULATOR_SUPPLY("8921_l17",		NULL),
@@ -166,6 +171,7 @@ VREG_CONSUMERS(S3) = {
 	REGULATOR_SUPPLY("8921_s3",		NULL),
 	REGULATOR_SUPPLY("HSUSB_VDDCX",		"msm_otg"),
 	REGULATOR_SUPPLY("riva_vddcx",		"wcnss_wlan.0"),
+	REGULATOR_SUPPLY("HSIC_VDDCX",		"msm_hsic_host"),
 };
 VREG_CONSUMERS(S4) = {
 	REGULATOR_SUPPLY("8921_s4",		NULL),
@@ -187,10 +193,12 @@ VREG_CONSUMERS(S4) = {
 VREG_CONSUMERS(S5) = {
 	REGULATOR_SUPPLY("8921_s5",		NULL),
 	REGULATOR_SUPPLY("krait0",		"acpuclk-8960"),
+	REGULATOR_SUPPLY("krait0",		"acpuclk-8960ab"),
 };
 VREG_CONSUMERS(S6) = {
 	REGULATOR_SUPPLY("8921_s6",		NULL),
 	REGULATOR_SUPPLY("krait1",		"acpuclk-8960"),
+	REGULATOR_SUPPLY("krait1",		"acpuclk-8960ab"),
 };
 VREG_CONSUMERS(S7) = {
 	REGULATOR_SUPPLY("8921_s7",		NULL),
@@ -211,20 +219,29 @@ VREG_CONSUMERS(LVS3) = {
 };
 VREG_CONSUMERS(LVS4) = {
 	REGULATOR_SUPPLY("8921_lvs4",		NULL),
+	REGULATOR_SUPPLY("vcc_i2c",		"3-0024"),
+	REGULATOR_SUPPLY("vcc_i2c",		"3-004a"),
 };
 VREG_CONSUMERS(LVS5) = {
 	REGULATOR_SUPPLY("8921_lvs5",		NULL),
-	REGULATOR_SUPPLY("cam_vio",		"msm_camera_imx074.0"),
-	REGULATOR_SUPPLY("cam_vio",		"msm_camera_ov2720.0"),
-#if defined(CONFIG_SONY_CAM_MAIN_V4L2) || defined(CONFIG_SONY_CAM_SUB_V4L2)
 	REGULATOR_SUPPLY("cam_vio",		"4-001a"),
+	REGULATOR_SUPPLY("cam_vio",		"4-0010"),
+	REGULATOR_SUPPLY("cam_vio",		"4-006c"),
 	REGULATOR_SUPPLY("cam_vio",		"4-0048"),
-#endif
+	REGULATOR_SUPPLY("cam_vio",		"4-0020"),
+	REGULATOR_SUPPLY("cam_vio",		"4-0034"),
 	REGULATOR_SUPPLY("lm3560_ntc",		"10-0053"),
-
 };
+/* This mapping is used for CDP only. */
+VREG_CONSUMERS(CDP_LVS6) = {
+	REGULATOR_SUPPLY("8921_lvs6",		NULL),
+	REGULATOR_SUPPLY("vdd-io",		"spi0.0"),
+};
+/* This mapping is used for non-CDP targets only. */
 VREG_CONSUMERS(LVS6) = {
 	REGULATOR_SUPPLY("8921_lvs6",		NULL),
+	REGULATOR_SUPPLY("vdd-io",		"spi0.0"),
+	REGULATOR_SUPPLY("vdd-phy",		"spi0.0"),
 };
 VREG_CONSUMERS(LVS7) = {
 	REGULATOR_SUPPLY("8921_lvs7",		NULL),
@@ -551,6 +568,17 @@ static struct rpm_regulator_consumer_mapping
 	RPM_REG_MAP(S8,  0, 1, "krait0_s8",  "acpuclk-8960"),
 	RPM_REG_MAP(S8,  0, 2, "krait1_s8",  "acpuclk-8960"),
 	RPM_REG_MAP(S8,  0, 6, "l2_s8",      "acpuclk-8960"),
+
+	RPM_REG_MAP(L23, 0, 1, "krait0_l23", "acpuclk-8960ab"),
+	RPM_REG_MAP(L23, 0, 2, "krait1_l23", "acpuclk-8960ab"),
+	RPM_REG_MAP(L23, 0, 6, "l2_l23",     "acpuclk-8960ab"),
+	RPM_REG_MAP(L24, 0, 1, "krait0_mem", "acpuclk-8960ab"),
+	RPM_REG_MAP(L24, 0, 2, "krait1_mem", "acpuclk-8960ab"),
+	RPM_REG_MAP(S3,  0, 1, "krait0_dig", "acpuclk-8960ab"),
+	RPM_REG_MAP(S3,  0, 2, "krait1_dig", "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 1, "krait0_s8",  "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 2, "krait1_s8",  "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 6, "l2_s8",      "acpuclk-8960ab"),
 };
 
 struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata = {
@@ -562,3 +590,36 @@ struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata = {
 	.consumer_map		= msm_rpm_regulator_consumer_mapping,
 	.consumer_map_len = ARRAY_SIZE(msm_rpm_regulator_consumer_mapping),
 };
+/*
+ * Fix up regulator consumer data that moves to a different regulator based on
+ * the current target.
+ */
+void __init configure_msm8960_power_grid(void)
+{
+	static struct rpm_regulator_init_data *rpm_data;
+	int i;
+
+	if (machine_is_msm8960_cdp() || cpu_is_msm8960ab()) {
+		/* Only modify LVS6 consumers for CDP targets. */
+		for (i = 0; i < ARRAY_SIZE(msm_rpm_regulator_init_data); i++) {
+			rpm_data = &msm_rpm_regulator_init_data[i];
+			if (machine_is_msm8960_cdp() &&
+				rpm_data->id == RPM_VREG_ID_PM8921_LVS6) {
+				rpm_data->init_data.consumer_supplies
+					= vreg_consumers_CDP_LVS6;
+				rpm_data->init_data.num_consumer_supplies
+					= ARRAY_SIZE(vreg_consumers_CDP_LVS6);
+			}
+			if (cpu_is_msm8960ab() &&
+				rpm_data->id == RPM_VREG_ID_PM8921_S7) {
+				rpm_data->init_data.constraints.min_uV =
+								1275000;
+				rpm_data->init_data.constraints.max_uV =
+								1275000;
+				rpm_data->init_data.constraints.input_uV =
+								1275000;
+				rpm_data->default_uV = 1275000;
+			}
+		}
+	}
+}

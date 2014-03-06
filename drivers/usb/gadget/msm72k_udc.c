@@ -2,7 +2,7 @@
  * Driver for HighSpeed USB Client Controller in MSM7K
  *
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
  * Author: Mike Lockwood <lockwood@android.com>
  *         Brian Swetland <swetland@google.com>
  *
@@ -514,15 +514,6 @@ static void config_ept(struct msm_endpoint *ept)
 {
 	struct usb_info *ui = ept->ui;
 	unsigned cfg = CONFIG_MAX_PKT(ept->ep.maxpacket) | CONFIG_ZLT;
-	const struct usb_endpoint_descriptor *desc = ept->ep.desc;
-	unsigned mult = 0;
-
-	if (desc && ((desc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
-				== USB_ENDPOINT_XFER_ISOC)) {
-		cfg &= ~(CONFIG_MULT);
-		mult = ((ept->ep.maxpacket >> CONFIG_MULT_SHIFT) + 1) & 0x03;
-		cfg |= (mult << (ffs(CONFIG_MULT) - 1));
-	}
 
 	/* ep0 out needs interrupt-on-setup */
 	if (ept->bit == 0)
@@ -710,6 +701,14 @@ int usb_ept_queue_xfer(struct msm_endpoint *ept, struct usb_request *_req)
 		return -EMSGSIZE;
 
 	spin_lock_irqsave(&ui->lock, flags);
+
+	if (ept->num != 0 && ept->ep.desc == NULL) {
+		req->req.status = -EINVAL;
+		spin_unlock_irqrestore(&ui->lock, flags);
+		dev_err(&ui->pdev->dev,
+			"%s: called for disabled endpoint\n", __func__);
+		return -EINVAL;
+	}
 
 	if (req->busy) {
 		req->req.status = -EBUSY;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,7 +15,8 @@
 #define __ARCH_ARM_MACH_MSM_CLOCK_LOCAL_2_H
 
 #include <linux/spinlock.h>
-#include "clock.h"
+#include <mach/clk-provider.h>
+#include <mach/clk.h>
 
 /*
  * Generic frequency-definition structs and macros
@@ -36,7 +37,7 @@ struct clk_freq_tbl {
 	const u32	m_val;
 	const u32	n_val;
 	const u32	d_val;
-	const u32	div_src_val;
+	u32	div_src_val;
 	const unsigned	sys_vdd;
 };
 
@@ -169,10 +170,21 @@ void set_rate_hid(struct rcg_clk *clk, struct clk_freq_tbl *nf);
  */
 extern spinlock_t local_clock_reg_lock;
 
+extern struct clk_ops clk_ops_empty;
 extern struct clk_ops clk_ops_rcg;
 extern struct clk_ops clk_ops_rcg_mnd;
 extern struct clk_ops clk_ops_branch;
 extern struct clk_ops clk_ops_vote;
+
+/*
+ * Clock definition macros
+ */
+#define DEFINE_CLK_MEASURE(name) \
+	struct clk name = { \
+		.ops = &clk_ops_empty, \
+		.dbg_name = #name, \
+		CLK_INIT(name), \
+	}; \
 
 #endif /* __ARCH_ARM_MACH_MSM_CLOCK_LOCAL_2_H */
 

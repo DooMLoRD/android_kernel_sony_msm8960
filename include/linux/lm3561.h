@@ -4,7 +4,7 @@
  * Copyright (C) 2012 Sony Mobile Communications AB.
  *
  * Author: Angela Fox <angela.fox@sonymobile.com>
- * Author: Aleksey Makarov <aleksej.makarov@sonymobile.com>
+ * Author: Aleksej Makarov <aleksej.makarov@sonymobile.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as

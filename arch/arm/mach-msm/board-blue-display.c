@@ -1,6 +1,5 @@
-/*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,7 +16,7 @@
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
 #include <linux/bootmem.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <linux/gpio.h>
 #include <asm/mach-types.h>
 #include <mach/msm_bus_board.h>
@@ -1346,6 +1345,15 @@ error:
 
 void __init msm8960_init_fb(void)
 {
+	uint32_t soc_platform_version = socinfo_get_version();
+
+
+	if (SOCINFO_VERSION_MAJOR(soc_platform_version) >= 3)
+		mdp_pdata.mdp_rev = MDP_REV_43;
+
+	if (cpu_is_msm8960ab())
+		mdp_pdata.mdp_rev = MDP_REV_44;
+
 	sony_blue_add_lcd_device();
 #ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
 	platform_device_register(&hdmi_msm_device);

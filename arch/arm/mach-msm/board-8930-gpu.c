@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,7 @@
 
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/msm_kgsl.h>
+#include <mach/kgsl.h>
 #include <mach/msm_bus_board.h>
 #include <mach/board.h>
 #include <mach/socinfo.h>
@@ -140,7 +140,7 @@ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
 	.set_grp_async = NULL,
 	.idle_timeout = HZ/12,
 	.nap_allowed = true,
-	.strtstp_sleepwake = true,
+	.strtstp_sleepwake = false,
 	.clk_map = KGSL_CLK_CORE | KGSL_CLK_IFACE | KGSL_CLK_MEM_IFACE,
 #ifdef CONFIG_MSM_BUS_SCALING
 	.bus_scale_table = &grp3d_bus_scale_pdata,
@@ -161,8 +161,26 @@ static struct platform_device device_kgsl_3d0 = {
 
 void __init msm8930_init_gpu(void)
 {
+	unsigned int version = socinfo_get_version();
+
+	/* Set the turbo speed for the AA and AB respectively */
+
 	if (cpu_is_msm8930aa())
 		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 450000000;
+	else if (cpu_is_msm8930ab()) {
+		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 500000000;
+		grp3d_max_vectors[0].ib = KGSL_CONVERT_TO_MBPS(4800);
+	}
+
+	/* Set up the chip ID based on the SoC version */
+
+	if (cpu_is_msm8930ab())
+		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 0, 5, 3);
+	else if ((SOCINFO_VERSION_MAJOR(version) == 1) &&
+		(SOCINFO_VERSION_MINOR(version) == 2))
+		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 0, 5, 2);
+	else
+		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 0, 5, 0);
 
 	platform_device_register(&device_kgsl_3d0);
 }

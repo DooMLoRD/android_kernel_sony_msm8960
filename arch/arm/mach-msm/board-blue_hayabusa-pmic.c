@@ -1,5 +1,5 @@
 /* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+ * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,7 +20,6 @@
 #include <linux/leds-pm8xxx.h>
 #include <linux/msm_ssbi.h>
 #include <linux/gpio_keys.h>
-#include <linux/platform_device.h>
 #include <asm/mach-types.h>
 #include <mach/msm_bus_board.h>
 #include <mach/restart.h>
@@ -28,7 +27,6 @@
 #include <mach/simple_remote_msm8960_pf.h>
 #include "devices.h"
 #include "board-8960.h"
-#include "charger-semc_blue.h"
 
 struct pm8xxx_gpio_init {
 	unsigned			gpio;
@@ -369,23 +367,22 @@ static int pm8921_therm_mitigation[] = {
 };
 
 #define MAX_VOLTAGE_MV		4200
+#define V_CUTOFF_MV		3200
 #define CHG_TERM_MA		70
-struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
-	.safety_time		= 512,
-	.ttrkl_time		= 64,
+static struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.update_time		= 30000,
-	.update_time_at_low_bat	= 1000,
 	.max_voltage		= MAX_VOLTAGE_MV,
-	.min_voltage		= 3200,
+	.min_voltage		= V_CUTOFF_MV,
+	.uvd_thresh_voltage	= 4050,
+	.alarm_low_mv		= V_CUTOFF_MV,
+	.alarm_high_mv		= V_CUTOFF_MV + 100,
 	.resume_voltage_delta	= 60,
-	.resume_soc		= 99,
+	.resume_charge_percent	= 99,
 	.term_current		= CHG_TERM_MA,
 	.cool_temp		= 10,
 	.warm_temp		= 45,
-	.hysterisis_temp	= 3,
+	.hysteresis_temp	= 3,
 	.temp_check_period	= 1,
-	.dc_unplug_check	= true,
-	.safe_current		= 1525,
 	.max_bat_chg_current	= 1525,
 	.cool_bat_chg_current	= 1525,
 	.warm_bat_chg_current	= 325,
@@ -393,33 +390,40 @@ struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.warm_bat_voltage	= 4000,
 	.thermal_mitigation	= pm8921_therm_mitigation,
 	.thermal_levels		= ARRAY_SIZE(pm8921_therm_mitigation),
-	.cold_thr		= PM_SMBC_BATT_TEMP_COLD_THR__HIGH,
-	.hot_thr		= PM_SMBC_BATT_TEMP_HOT_THR__HIGH,
 	.rconn_mohm		= 18,
+	.soc_scaling		= 1,
 	.btc_override		= 1,
-	.btc_override_cold_degc = 5,
+	.btc_override_cold_degc	= 5,
 	.btc_override_hot_degc	= 55,
 	.btc_delay_ms		= 10000,
-	.btc_panic_if_cant_stop_chg = 1,
+	.btc_panic_if_cant_stop_chg	= 1,
+	.safety_time		= 512,
 };
 
 static struct pm8xxx_misc_platform_data pm8xxx_misc_pdata = {
-
 	.priority		= 0,
 };
 
-struct pm8921_bms_platform_data pm8921_bms_pdata __devinitdata = {
-	.battery_data		= &pm8921_battery_data,
-	.r_sense		= 10,
-	.i_test			= 1000,
-	.v_cutoff			= 3200,
-	.max_voltage_uv         = MAX_VOLTAGE_MV * 1000,
-	.default_rbatt_mohms	= 170,
-	.rconn_mohm		= 30,
-	.enable_fcc_learning	= 1,
+static struct pm8921_bms_platform_data pm8921_bms_pdata __devinitdata = {
+	.battery_type			= BATT_OEM,
+	.r_sense_uohm			= 10000,
+	.v_cutoff			= V_CUTOFF_MV,
+	.max_voltage_uv			= MAX_VOLTAGE_MV * 1000,
+	.rconn_mohm			= 30,
 	.shutdown_soc_valid_limit	= 20,
 	.adjust_soc_low_threshold	= 25,
 	.chg_term_ua			= CHG_TERM_MA * 1000,
+	.normal_voltage_calc_ms		= 20000,
+	.low_voltage_calc_ms		= 1000,
+	.alarm_low_mv			= V_CUTOFF_MV,
+	.alarm_high_mv			= V_CUTOFF_MV + 100,
+	.hold_soc_est			= 3,
+	.low_voltage_detect		= 1,
+	.vbatt_cutoff_retries		= 5,
+	.enable_fcc_learning		= 1,
+	.min_fcc_learning_soc		= 20,
+	.min_fcc_ocv_pc			= 30,
+	.min_fcc_learning_samples	= 5,
 };
 
 #define	PM8921_LC_LED_MAX_CURRENT	4	/* I = 4mA */
@@ -489,7 +493,7 @@ static struct pm8xxx_led_platform_data pm8xxx_leds_pdata = {
 };
 
 static struct pm8xxx_ccadc_platform_data pm8xxx_ccadc_pdata = {
-	.r_sense		= 10,
+	.r_sense_uohm		= 10000,
 	.calib_delay_ms		= 600000,
 };
 
@@ -504,8 +508,9 @@ static struct pm8xxx_pwm_platform_data pm8xxx_pwm_pdata = {
 	.dtest_channel	= PM8XXX_PWM_DTEST_CHANNEL_NONE,
 };
 
-struct pm8xxx_vibrator_platform_data pm8xxx_vibrator_pdata = {
+static struct pm8xxx_vibrator_platform_data pm8xxx_vibrator_pdata = {
 	.initial_vibrate_ms = 0,
+	.max_timeout_ms = 15000,
 	.level_mV = 3100,
 };
 
@@ -530,8 +535,8 @@ static struct pm8921_platform_data pm8921_platform_data __devinitdata = {
 	.ccadc_pdata		= &pm8xxx_ccadc_pdata,
 	.pwm_pdata		= &pm8xxx_pwm_pdata,
 	.vibrator_pdata		= &pm8xxx_vibrator_pdata,
-	.simple_remote_pdata	= &simple_remote_pf_data,
 	.mic_bias_pdata		= &pm8921_mic_bias_pdata,
+	.simple_remote_pdata	= &simple_remote_pf_data,
 };
 
 static struct msm_ssbi_platform_data msm8960_ssbi_pm8921_pdata __devinitdata = {

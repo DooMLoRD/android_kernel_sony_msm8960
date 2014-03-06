@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,7 @@
 #define __QDSP6VOICE_H__
 
 #include <mach/qdsp6v2/apr.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 
 #define MAX_VOC_PKT_SIZE 642
 #define SESSION_NAME_LEN 20

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -66,6 +66,8 @@ int of_register_slim_devices(struct slim_controller *ctrl)
 			kfree(slim);
 			return -ENOMEM;
 		}
+
+		slim->dev.of_node = of_node_get(node);
 		slim->name = (const char *)name;
 		binfo[n].bus_num = ctrl->nr;
 		binfo[n].slim_slave = slim;

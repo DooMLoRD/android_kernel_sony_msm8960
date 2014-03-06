@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -100,10 +100,11 @@
 #include "peripheral-loader.h"
 #include <linux/platform_data/qcom_crypto_device.h>
 #include "rpm_resources.h"
+#include "clock.h"
 #include "pm-boot.h"
 #include "board-storage-common-a.h"
 
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <mach/ion.h>
 #include <mach/msm_rtb.h>
 
@@ -466,26 +467,6 @@ static struct platform_device msm_device_saw_s1 = {
 	.dev           = {
 		.platform_data = &saw_s1_init_data,
 	},
-};
-
-/*
- * The smc91x configuration varies depending on platform.
- * The resources data structure is filled in at runtime.
- */
-static struct resource smc91x_resources[] = {
-	[0] = {
-		.flags = IORESOURCE_MEM,
-	},
-	[1] = {
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device smc91x_device = {
-	.name          = "smc91x",
-	.id            = 0,
-	.num_resources = ARRAY_SIZE(smc91x_resources),
-	.resource      = smc91x_resources,
 };
 
 static struct resource smsc911x_resources[] = {
@@ -3619,30 +3600,14 @@ static struct i2c_board_info cy8ctma340_dragon_board_info[] = {
 };
 
 #ifdef CONFIG_SERIAL_MSM_HS
-static int configure_uart_gpios(int on)
-{
-	int ret = 0, i;
-	int uart_gpios[] = {53, 54, 55, 56};
-	for (i = 0; i < ARRAY_SIZE(uart_gpios); i++) {
-		if (on) {
-			ret = msm_gpiomux_get(uart_gpios[i]);
-			if (unlikely(ret))
-				break;
-		} else {
-			ret = msm_gpiomux_put(uart_gpios[i]);
-			if (unlikely(ret))
-				return ret;
-		}
-	}
-	if (ret)
-		for (; i >= 0; i--)
-			msm_gpiomux_put(uart_gpios[i]);
-	return ret;
-}
 static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
-       .inject_rx_on_wakeup = 1,
-       .rx_to_inject = 0xFD,
-       .gpio_config = configure_uart_gpios,
+	.inject_rx_on_wakeup	= 1,
+	.rx_to_inject		= 0xFD,
+	.config_gpio		= 4,
+	.uart_tx_gpio		= 53,
+	.uart_rx_gpio		= 54,
+	.uart_cts_gpio		= 55,
+	.uart_rfr_gpio		= 56,
 };
 #endif
 
@@ -4219,72 +4184,6 @@ static struct platform_device msm_bt_power_device = {
 static struct platform_device msm_tsens_device = {
 	.name   = "tsens-tm",
 	.id = -1,
-};
-
-static struct platform_device *rumi_sim_devices[] __initdata = {
-	&smc91x_device,
-	&msm_device_uart_dm12,
-#ifdef CONFIG_I2C_QUP
-	&msm_gsbi3_qup_i2c_device,
-	&msm_gsbi4_qup_i2c_device,
-	&msm_gsbi7_qup_i2c_device,
-	&msm_gsbi8_qup_i2c_device,
-	&msm_gsbi9_qup_i2c_device,
-	&msm_gsbi12_qup_i2c_device,
-#endif
-#ifdef CONFIG_I2C_SSBI
-	&msm_device_ssbi3,
-#endif
-#ifdef CONFIG_ANDROID_PMEM
-#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
-	&android_pmem_device,
-	&android_pmem_adsp_device,
-	&android_pmem_smipool_device,
-	&android_pmem_audio_device,
-#endif /*CONFIG_MSM_MULTIMEDIA_USE_ION*/
-#endif /*CONFIG_ANDROID_PMEM*/
-#ifdef CONFIG_MSM_ROTATOR
-	&msm_rotator_device,
-#endif
-	&msm_fb_device,
-	&msm_kgsl_3d0,
-	&msm_kgsl_2d0,
-	&msm_kgsl_2d1,
-	&lcdc_samsung_panel_device,
-#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
-	&hdmi_msm_device,
-#endif /* CONFIG_FB_MSM_HDMI_MSM_PANEL */
-#ifdef CONFIG_MSM_CAMERA
-#ifndef CONFIG_MSM_CAMERA_V4L2
-#ifdef CONFIG_MT9E013
-	&msm_camera_sensor_mt9e013,
-#endif
-#ifdef CONFIG_IMX074
-	&msm_camera_sensor_imx074,
-#endif
-#ifdef CONFIG_VX6953
-	&msm_camera_sensor_vx6953,
-#endif
-#ifdef CONFIG_WEBCAM_OV7692
-	&msm_camera_sensor_webcam_ov7692,
-#endif
-#ifdef CONFIG_WEBCAM_OV9726
-	&msm_camera_sensor_webcam_ov9726,
-#endif
-#ifdef CONFIG_QS_S5K4E1
-	&msm_camera_sensor_qs_s5k4e1,
-#endif
-#endif
-#endif
-#ifdef CONFIG_MSM_GEMINI
-	&msm_gemini_device,
-#endif
-#ifdef CONFIG_MSM_VPE
-#ifndef CONFIG_MSM_CAMERA_V4L2
-	&msm_vpe_device,
-#endif
-#endif
-	&msm_device_vidc,
 };
 
 #if defined(CONFIG_GPIO_SX150X) || defined(CONFIG_GPIO_SX150X_MODULE)
@@ -5432,9 +5331,7 @@ static struct ion_co_heap_pdata co_ion_pdata = {
  * to each other.
  * Don't swap the order unless you know what you are doing!
  */
-static struct ion_platform_data ion_pdata = {
-	.nr = MSM_ION_HEAP_NUM,
-	.heaps = {
+struct ion_platform_heap msm8x60_heaps [] = {
 		{
 			.id	= ION_SYSTEM_HEAP_ID,
 			.type	= ION_HEAP_TYPE_SYSTEM,
@@ -5509,7 +5406,11 @@ static struct ion_platform_data ion_pdata = {
 			.extra_data = (void *)&co_ion_pdata,
 		},
 #endif
-	}
+};
+
+static struct ion_platform_data ion_pdata = {
+	.nr = MSM_ION_HEAP_NUM,
+	.heaps = msm8x60_heaps,
 };
 
 static struct platform_device ion_dev = {
@@ -5563,7 +5464,8 @@ static void __init reserve_ion_memory(void)
 	for (i = 0; i < ion_pdata.nr; i++) {
 		struct ion_platform_heap *heap = &(ion_pdata.heaps[i]);
 
-		if (heap->extra_data && heap->type == ION_HEAP_TYPE_CP) {
+		if (heap->extra_data &&
+			heap->type == (enum ion_heap_type) ION_HEAP_TYPE_CP) {
 			int map_all = ((struct ion_cp_heap_pdata *)
 				heap->extra_data)->iommu_map_all;
 
@@ -7465,10 +7367,6 @@ static void __init register_i2c_devices(void)
 		mach_mask = I2C_SURF;
 	else if (machine_is_msm8x60_ffa() || machine_is_msm8x60_fusn_ffa())
 		mach_mask = I2C_FFA;
-	else if (machine_is_msm8x60_rumi3())
-		mach_mask = I2C_RUMI;
-	else if (machine_is_msm8x60_sim())
-		mach_mask = I2C_SIM;
 	else if (machine_is_msm8x60_fluid())
 		mach_mask = I2C_FLUID;
 	else if (machine_is_msm8x60_dragon())
@@ -7655,10 +7553,6 @@ static void __init msm8x60_init_ebi2(void)
 			machine_is_msm8x60_fluid() ||
 			machine_is_msm8x60_dragon())
 			ebi2_cfg |= (1 << 4) | (1 << 5); /* CS2, CS3 */
-		else if (machine_is_msm8x60_sim())
-			ebi2_cfg |= (1 << 4); /* CS2 */
-		else if (machine_is_msm8x60_rumi3())
-			ebi2_cfg |= (1 << 5); /* CS3 */
 
 		writel_relaxed(ebi2_cfg, ebi2_cfg_ptr);
 		iounmap(ebi2_cfg_ptr);
@@ -7697,32 +7591,6 @@ static void __init msm8x60_init_ebi2(void)
 			iounmap(ebi2_cfg_ptr);
 		}
 	}
-}
-
-static void __init msm8x60_configure_smc91x(void)
-{
-	if (machine_is_msm8x60_sim()) {
-
-		smc91x_resources[0].start = 0x1b800300;
-		smc91x_resources[0].end   = 0x1b8003ff;
-
-		smc91x_resources[1].start = (NR_MSM_IRQS + 40);
-		smc91x_resources[1].end   = (NR_MSM_IRQS + 40);
-
-	} else if (machine_is_msm8x60_rumi3()) {
-
-		smc91x_resources[0].start = 0x1d000300;
-		smc91x_resources[0].end   = 0x1d0003ff;
-
-		smc91x_resources[1].start = TLMM_MSM_DIR_CONN_IRQ_0;
-		smc91x_resources[1].end   = TLMM_MSM_DIR_CONN_IRQ_0;
-	}
-}
-
-static void __init msm8x60_init_tlmm(void)
-{
-	if (machine_is_msm8x60_rumi3())
-		msm_gpio_install_direct_irq(0, 0, 1);
 }
 
 #if (defined(CONFIG_MMC_MSM_SDC1_SUPPORT)\
@@ -9868,10 +9736,7 @@ static void __init msm_fb_add_devices(void)
 #ifdef CONFIG_FB_MSM_LCDC_DSUB
 	mdp_pdata.mdp_max_clk = 200000000;
 #endif
-	if (machine_is_msm8x60_rumi3())
-		msm_fb_register_device("mdp", NULL);
-	else
-		msm_fb_register_device("mdp", &mdp_pdata);
+	msm_fb_register_device("mdp", &mdp_pdata);
 
 	msm_fb_register_device("lcdc", &lcdc_pdata);
 	msm_fb_register_device("mipi_dsi", &mipi_dsi_pdata);
@@ -10288,14 +10153,6 @@ struct msm_board_data {
 	struct msm_gpiomux_configs *gpiomux_cfgs;
 };
 
-static struct msm_board_data msm8x60_rumi3_board_data __initdata = {
-	.gpiomux_cfgs = msm8x60_surf_ffa_gpiomux_cfgs,
-};
-
-static struct msm_board_data msm8x60_sim_board_data __initdata = {
-	.gpiomux_cfgs = msm8x60_surf_ffa_gpiomux_cfgs,
-};
-
 static struct msm_board_data msm8x60_surf_board_data __initdata = {
 	.gpiomux_cfgs = msm8x60_surf_ffa_gpiomux_cfgs,
 };
@@ -10332,6 +10189,7 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 #endif
 	pmic_reset_irq = PM8058_IRQ_BASE + PM8058_RESOUT_IRQ;
 
+	platform_device_register(&msm_gpio_device);
 	/*
 	 * Initialize RPM first as other drivers and devices may need
 	 * it for their initialization.
@@ -10406,12 +10264,9 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 	 * it disabled for all others for additional power savings.
 	 */
 	if (machine_is_msm8x60_surf() || machine_is_msm8x60_ffa() ||
-			machine_is_msm8x60_rumi3() ||
-			machine_is_msm8x60_sim() ||
 			machine_is_msm8x60_fluid() ||
 			machine_is_msm8x60_dragon())
 		msm8x60_init_ebi2();
-	msm8x60_init_tlmm();
 	msm8x60_init_gpiomux(board_data->gpiomux_cfgs);
 	msm8x60_init_uart12dm();
 #ifdef CONFIG_MSM_CAMERA_V4L2
@@ -10501,10 +10356,6 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 #endif
 			platform_add_devices(asoc_devices,
 					ARRAY_SIZE(asoc_devices));
-	} else {
-		msm8x60_configure_smc91x();
-		platform_add_devices(rumi_sim_devices,
-				     ARRAY_SIZE(rumi_sim_devices));
 	}
 #if defined(CONFIG_USB_PEHCI_HCD) || defined(CONFIG_USB_PEHCI_HCD_MODULE)
 	if (machine_is_msm8x60_surf() || machine_is_msm8x60_ffa() ||
@@ -10528,8 +10379,7 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 	if (machine_is_msm8x60_fluid())
 		cyttsp_set_params();
 #endif
-	if (!machine_is_msm8x60_sim())
-		msm_fb_add_devices();
+	msm_fb_add_devices();
 	fixup_i2c_configs();
 	register_i2c_devices();
 
@@ -10596,16 +10446,6 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 		msm_fusion_setup_pinctrl();
 }
 
-static void __init msm8x60_rumi3_init(void)
-{
-	msm8x60_init(&msm8x60_rumi3_board_data);
-}
-
-static void __init msm8x60_sim_init(void)
-{
-	msm8x60_init(&msm8x60_sim_board_data);
-}
-
 static void __init msm8x60_surf_init(void)
 {
 	msm8x60_init(&msm8x60_surf_board_data);
@@ -10640,28 +10480,6 @@ static void __init msm8x60_dragon_init(void)
 {
 	msm8x60_init(&msm8x60_dragon_board_data);
 }
-
-MACHINE_START(MSM8X60_RUMI3, "QCT MSM8X60 RUMI3")
-	.map_io = msm8x60_map_io,
-	.reserve = msm8x60_reserve,
-	.init_irq = msm8x60_init_irq,
-	.handle_irq = gic_handle_irq,
-	.init_machine = msm8x60_rumi3_init,
-	.timer = &msm_timer,
-	.init_early = msm8x60_charm_init_early,
-	.restart = msm_restart,
-MACHINE_END
-
-MACHINE_START(MSM8X60_SIM, "QCT MSM8X60 SIMULATOR")
-	.map_io = msm8x60_map_io,
-	.reserve = msm8x60_reserve,
-	.init_irq = msm8x60_init_irq,
-	.handle_irq = gic_handle_irq,
-	.init_machine = msm8x60_sim_init,
-	.timer = &msm_timer,
-	.init_early = msm8x60_charm_init_early,
-	.restart = msm_restart,
-MACHINE_END
 
 MACHINE_START(MSM8X60_SURF, "QCT MSM8X60 SURF")
 	.map_io = msm8x60_map_io,

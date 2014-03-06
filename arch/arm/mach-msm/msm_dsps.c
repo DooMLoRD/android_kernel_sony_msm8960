@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,7 +45,7 @@
 #include "timer.h"
 
 #define DRV_NAME	"msm_dsps"
-#define DRV_VERSION	"4.02"
+#define DRV_VERSION	"4.03"
 
 
 #define PPSS_TIMER0_32KHZ_REG	0x1004
@@ -722,6 +722,8 @@ const struct file_operations dsps_fops = {
 	.unlocked_ioctl = dsps_ioctl,
 };
 
+static struct subsys_device *dsps_dev;
+
 /**
  *  Fatal error handler
  *  Resets DSPS.
@@ -735,7 +737,7 @@ static void dsps_restart_handler(void)
 		pr_err("%s: DSPS already resetting. Count %d\n", __func__,
 		       atomic_read(&drv->crash_in_progress));
 	} else {
-		subsystem_restart("dsps");
+		subsystem_restart_dev(dsps_dev);
 	}
 }
 
@@ -765,10 +767,15 @@ static void dsps_smsm_state_cb(void *data, uint32_t old_state,
  * called by the restart notifier
  *
  */
-static int dsps_shutdown(const struct subsys_data *subsys)
+static int dsps_shutdown(const struct subsys_desc *subsys)
 {
 	pr_debug("%s\n", __func__);
 	disable_irq_nosync(drv->wdog_irq);
+	if (drv->pdata->ppss_wdog_unmasked_int_en_reg) {
+		writel_relaxed(0, (drv->ppss_base+
+			drv->pdata->ppss_wdog_unmasked_int_en_reg));
+		mb(); /* Make sure wdog is disabled before shutting down */
+	}
 	pil_force_shutdown(drv->pdata->pil_name);
 	dsps_power_off_handler();
 	return 0;
@@ -779,7 +786,7 @@ static int dsps_shutdown(const struct subsys_data *subsys)
  * called by the restart notifier
  *
  */
-static int dsps_powerup(const struct subsys_data *subsys)
+static int dsps_powerup(const struct subsys_desc *subsys)
 {
 	pr_debug("%s\n", __func__);
 	dsps_power_on_handler();
@@ -794,9 +801,10 @@ static int dsps_powerup(const struct subsys_data *subsys)
  * called by the restart notifier
  *
  */
-static void dsps_crash_shutdown(const struct subsys_data *subsys)
+static void dsps_crash_shutdown(const struct subsys_desc *subsys)
 {
 	pr_debug("%s\n", __func__);
+	disable_irq_nosync(drv->wdog_irq);
 	dsps_crash_shutdown_g = 1;
 	smsm_change_state(SMSM_DSPS_STATE, SMSM_RESET, SMSM_RESET);
 }
@@ -806,7 +814,7 @@ static void dsps_crash_shutdown(const struct subsys_data *subsys)
  * called by the restart notifier
  *
  */
-static int dsps_ramdump(int enable, const struct subsys_data *subsys)
+static int dsps_ramdump(int enable, const struct subsys_desc *subsys)
 {
 	int ret = 0;
 	pr_debug("%s\n", __func__);
@@ -838,7 +846,7 @@ dsps_ramdump_out:
 	return ret;
 }
 
-static struct subsys_data dsps_ssrops = {
+static struct subsys_desc dsps_ssrops = {
 	.name = "dsps",
 	.shutdown = dsps_shutdown,
 	.powerup = dsps_powerup,
@@ -919,9 +927,10 @@ static int __devinit dsps_probe(struct platform_device *pdev)
 		goto smsm_register_err;
 	}
 
-	ret = ssr_register_subsystem(&dsps_ssrops);
-	if (ret) {
-		pr_err("%s: ssr_register_subsystem fail %d\n", __func__,
+	dsps_dev = subsys_register(&dsps_ssrops);
+	if (IS_ERR(dsps_dev)) {
+		ret = PTR_ERR(dsps_dev);
+		pr_err("%s: subsys_register fail %d\n", __func__,
 		       ret);
 		goto ssr_register_err;
 	}
@@ -953,6 +962,7 @@ static int __devexit dsps_remove(struct platform_device *pdev)
 {
 	pr_debug("%s.\n", __func__);
 
+	subsys_unregister(dsps_dev);
 	dsps_power_off_handler();
 	dsps_free_resources();
 

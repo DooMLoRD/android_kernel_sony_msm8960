@@ -139,7 +139,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned int new_freq;
 	unsigned int index;
 	unsigned long flags;
-	unsigned int relation = CPUFREQ_RELATION_H;
 
 	smp_rmb();
 
@@ -216,19 +215,14 @@ static void cpufreq_interactive_timer(unsigned long data)
 			}
 		}
 	} else {
-		/*
-		 * Find the lowest frequency that allows
-		 * us to stay below go_highspeed_load.
-		 */
-		new_freq = pcpu->target_freq * cpu_load / go_hispeed_load;
-		relation = CPUFREQ_RELATION_L;
+		new_freq = pcpu->policy->max * cpu_load / 100;
 	}
 
 	if (new_freq <= hispeed_freq)
 		pcpu->hispeed_validate_time = pcpu->timer_run_time;
 
 	if (cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table,
-					   new_freq, relation,
+					   new_freq, CPUFREQ_RELATION_H,
 					   &index)) {
 		pr_warn_once("timer %d: cpufreq_frequency_table_target error\n",
 			     (int) data);

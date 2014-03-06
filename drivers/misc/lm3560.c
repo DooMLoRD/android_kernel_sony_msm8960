@@ -22,7 +22,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
 
-static int autosuspend_delay_ms = 1200;
+static int autosuspend_delay_ms = 100;
 module_param(autosuspend_delay_ms, int, S_IRUGO);
 /*
  ******************************************************************************
