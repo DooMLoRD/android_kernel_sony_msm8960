@@ -23,6 +23,7 @@
 #include <linux/init.h>
 #include <linux/nmi.h>
 #include <linux/dmi.h>
+#include <linux/coresight.h>
 
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
@@ -80,6 +81,7 @@ void panic(const char *fmt, ...)
 	long i, i_next = 0;
 	int state = 0;
 
+	coresight_abort();
 	/*
 	 * Disable local interrupts. This will prevent panic_smp_self_stop
 	 * from deadlocking the first cpu that invokes the panic, since
@@ -106,7 +108,14 @@ void panic(const char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
+#ifdef CONFIG_LGE_CRASH_HANDLER
+	set_kernel_crash_magic_number();
+	set_crash_store_enable();
+#endif
 	printk(KERN_EMERG "Kernel panic - not syncing: %s\n",buf);
+#ifdef CONFIG_LGE_CRASH_HANDLER
+	set_crash_store_disable();
+#endif
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*
 	 * Avoid nested stack-dumping if a panic occurs during oops processing
@@ -364,7 +373,19 @@ int oops_may_print(void)
  */
 void oops_enter(void)
 {
+	static int kick_watchdog_on_oops_done;
 	tracing_off();
+
+	/* we want to kick the watchdog on a die or panic call so
+	we don't get a HWWD bark before we finish writing the full oops.
+	But we only want to do this once in case we get a recursive
+	crash, we need the watchdog to reset us in that case;
+	*/
+	if (!kick_watchdog_on_oops_done) {
+		kick_watchdog_on_oops_done = 1;
+		touch_nmi_watchdog();
+	}
+
 	/* can't trust the integrity of the kernel anymore: */
 	debug_locks_off();
 	do_oops_enter_exit();

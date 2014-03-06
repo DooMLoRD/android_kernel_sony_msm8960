@@ -26,8 +26,8 @@
 #include <mach/clk.h>
 #include <asm/div64.h>
 #include "msm.h"
+#include "msm_cam_server.h"
 #include "sony_vpe.h"
-
 #define MSM_VPE_NAME "msm_vpe_standalone"
 
 static int vpe_update_scaler(struct msm_pp_crop *pcrop);
@@ -66,8 +66,7 @@ static int vpe_start(void)
 	msm_camera_io_dump(vpe_ctrl->vpebase + 0x50000, 0x30);
 	msm_camera_io_dump(vpe_ctrl->vpebase + 0x50400, 0x10);
 	/* this triggers the operation. */
-	msm_camera_io_w(1, vpe_ctrl->vpebase + VPE_DL0_START_OFFSET);
-	wmb();
+	msm_camera_io_w_mb(1, vpe_ctrl->vpebase + VPE_DL0_START_OFFSET);
 	return 0;
 }
 
@@ -110,8 +109,8 @@ static int vpe_reset(void)
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
 
 	vpe_reset_state_variables();
-	vpe_version = msm_camera_io_r(
-			vpe_ctrl->vpebase + VPE_HW_VERSION_OFFSET);
+	vpe_version = msm_camera_io_r(vpe_ctrl->vpebase +
+			VPE_HW_VERSION_OFFSET);
 	CDBG("vpe_version = 0x%x\n", vpe_version);
 
 	/* disable all interrupts.*/
@@ -152,8 +151,7 @@ static int msm_vpe_cfg_update(void *pinfo)
 	rot_flag = msm_camera_io_r(vpe_ctrl->vpebase +
 						VPE_OP_MODE_OFFSET) & 0xE00;
 	if (pinfo != NULL) {
-		CDBG("%s: Crop info in2_w = %d, in2_h = %d "
-			"out2_w = %d out2_h = %d\n",
+		CDBG("%s: Crop info in2_w=%d in2_h=%d out2_w=%d out2_h=%d\n",
 			__func__, pcrop->src_w, pcrop->src_h,
 			pcrop->dst_w, pcrop->dst_h);
 		rc = vpe_update_scaler(pcrop);
@@ -169,10 +167,10 @@ static void vpe_update_scale_coef(uint32_t *p)
 	uint32_t i, offset;
 	offset = *p;
 	for (i = offset; i < (VPE_SCALE_COEFF_NUM + offset); i++) {
-		msm_camera_io_w(*(++p),
-				vpe_ctrl->vpebase + VPE_SCALE_COEFF_LSBn(i));
-		msm_camera_io_w(*(++p),
-				vpe_ctrl->vpebase + VPE_SCALE_COEFF_MSBn(i));
+		msm_camera_io_w(*(++p), vpe_ctrl->vpebase +
+				VPE_SCALE_COEFF_LSBn(i));
+		msm_camera_io_w(*(++p), vpe_ctrl->vpebase +
+				VPE_SCALE_COEFF_MSBn(i));
 	}
 }
 
@@ -190,8 +188,8 @@ static void vpe_input_plane_config(uint32_t *p)
 static void vpe_output_plane_config(uint32_t *p)
 {
 	msm_camera_io_w(*p, vpe_ctrl->vpebase + VPE_OUT_FORMAT_OFFSET);
-	msm_camera_io_w(*(++p),
-			vpe_ctrl->vpebase + VPE_OUT_PACK_PATTERN1_OFFSET);
+	msm_camera_io_w(*(++p), vpe_ctrl->vpebase +
+			VPE_OUT_PACK_PATTERN1_OFFSET);
 	msm_camera_io_w(*(++p), vpe_ctrl->vpebase + VPE_OUT_YSTRIDE1_OFFSET);
 	msm_camera_io_w(*(++p), vpe_ctrl->vpebase + VPE_OUT_SIZE_OFFSET);
 	msm_camera_io_w(*(++p), vpe_ctrl->vpebase + VPE_OUT_XY_OFFSET);
@@ -628,10 +626,16 @@ static int msm_vpe_start_transfer(struct msm_vpe_transfer_cfg *transfercmd,
 		src_ionhandle = ion_import_dma_buf(vpe_client, src_info->fd);
 		if (IS_ERR_OR_NULL(src_ionhandle))
 			return 0;
+#ifdef CONFIG_MSM_IOMMU
+		rc = ion_map_iommu(vpe_client, src_ionhandle,
+				   vpe_ctrl->domain_num, 0, SZ_4K, 0,
+				   &src_paddr, &src_len, 0, 0);
+#else
 		rc = ion_phys(vpe_client,
 			      src_ionhandle,
 			      &src_paddr,
 			      (size_t *)&src_len);
+#endif
 #else
 		rc = get_pmem_file(src_info->fd,
 				   &src_paddr,
@@ -659,10 +663,16 @@ static int msm_vpe_start_transfer(struct msm_vpe_transfer_cfg *transfercmd,
 		dst_ionhandle = ion_import_dma_buf(vpe_client, dst_info->fd);
 		if (IS_ERR_OR_NULL(src_ionhandle))
 			return 0;
+#ifdef CONFIG_MSM_IOMMU
+		rc = ion_map_iommu(vpe_client, dst_ionhandle,
+				   vpe_ctrl->domain_num, 0, SZ_4K, 0,
+				   &dst_paddr, &dst_len, 0, 0);
+#else
 		rc = ion_phys(vpe_client,
 			      dst_ionhandle,
 			      &dst_paddr,
 			      (size_t *)&dst_len);
+#endif
 #else
 		rc = get_pmem_file(dst_info->fd,
 				   &dst_paddr,
@@ -690,8 +700,7 @@ static int msm_vpe_start_transfer(struct msm_vpe_transfer_cfg *transfercmd,
 	crop_info.dst_h = transfercmd->dst_crop.h;
 	crop_info.src_x = (transfercmd->dst_crop.w - transfercmd->src_crop.w)/2;
 	crop_info.src_y = (transfercmd->dst_crop.h - transfercmd->src_crop.h)/2;
-	CDBG("Crop info src_w = %d, src_h = %d "
-		"dst_w = %d dst_h = %d\n",
+	CDBG("Crop info src_w = %d, src_h = %d, dst_w = %d, dst_h = %d\n",
 		crop_info.src_w,
 		crop_info.src_h,
 		crop_info.dst_w,
@@ -728,6 +737,12 @@ static int msm_vpe_start_transfer(struct msm_vpe_transfer_cfg *transfercmd,
 
 	if (put_pmem) {
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+#ifdef CONFIG_MSM_IOMMU
+		ion_unmap_iommu(vpe_client, dst_ionhandle,
+				vpe_ctrl->domain_num, 0);
+		ion_unmap_iommu(vpe_client, src_ionhandle,
+				vpe_ctrl->domain_num, 0);
+#endif
 		ion_free(vpe_client, dst_ionhandle);
 		ion_free(vpe_client, src_ionhandle);
 #else
@@ -777,7 +792,7 @@ static int msm_vpe_pmem_register(struct msm_vpe_register_cfg *registercmd,
 	if (IS_ERR_OR_NULL(ionhandle))
 		return 0;
 #ifdef CONFIG_MSM_IOMMU
-	rc = ion_map_iommu(vpe_client, ionhandle, CAMERA_DOMAIN, GEN_POOL,
+	rc = ion_map_iommu(vpe_client, ionhandle, vpe_ctrl->domain_num, 0,
 				SZ_4K, 0, &paddr, &len, UNCACHED, 0);
 #else
 	rc = ion_phys(vpe_client, ionhandle, &paddr, (size_t *)&len);
@@ -831,7 +846,7 @@ static int msm_vpe_pmem_unregister(struct msm_vpe_unregister_cfg *unregistercmd,
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 #ifdef CONFIG_MSM_IOMMU
 				ion_unmap_iommu(vpe_client, region->ion_handle,
-						CAMERA_DOMAIN, GEN_POOL);
+						vpe_ctrl->domain_num, 0);
 #endif
 				ion_free(vpe_client, region->ion_handle);
 #else
@@ -872,6 +887,8 @@ DECLARE_TASKLET(vpe_standalone_tasklet, vpe_do_tasklet, 0);
 
 static irqreturn_t vpe_parse_irq(int irq_num, void *data)
 {
+	if (!vpe_ctrl || !vpe_ctrl->vpebase)
+		return IRQ_HANDLED;
 	vpe_ctrl->irq_status = msm_camera_io_r_mb(vpe_ctrl->vpebase +
 							VPE_INTR_STATUS_OFFSET);
 	msm_camera_io_w_mb(vpe_ctrl->irq_status, vpe_ctrl->vpebase +
@@ -904,16 +921,12 @@ int vpe_enable(uint32_t clk_rate)
 	vpe_ctrl->state = VPE_STATE_INIT;
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
 	enable_irq(vpe_ctrl->vpeirq->start);
-	vpe_ctrl->fs_vpe = regulator_get(NULL, "fs_vpe");
-	if (IS_ERR(vpe_ctrl->fs_vpe)) {
-		pr_err("%s: Regulator FS_VPE get failed %ld\n", __func__,
-			PTR_ERR(vpe_ctrl->fs_vpe));
-		vpe_ctrl->fs_vpe = NULL;
-		goto vpe_fs_failed;
-	} else if (regulator_enable(vpe_ctrl->fs_vpe)) {
-		pr_err("%s: Regulator FS_VPE enable failed\n", __func__);
-		regulator_put(vpe_ctrl->fs_vpe);
-		goto vpe_fs_failed;
+	if (vpe_ctrl->fs_vpe) {
+		rc = regulator_enable(vpe_ctrl->fs_vpe);
+		if (rc) {
+			pr_err("%s: Regulator enable failed\n", __func__);
+			goto vpe_fs_failed;
+		}
 	}
 
 	rc = msm_cam_clk_enable(&vpe_ctrl->pdev->dev, vpe_clk_info,
@@ -921,12 +934,31 @@ int vpe_enable(uint32_t clk_rate)
 	if (rc < 0)
 		goto vpe_clk_failed;
 
+#ifdef CONFIG_MSM_IOMMU
+	rc = iommu_attach_device(vpe_ctrl->domain, vpe_ctrl->iommu_ctx_src);
+	if (rc < 0) {
+		pr_err("%s: Device attach failed\n", __func__);
+		goto src_attach_failed;
+	}
+	rc = iommu_attach_device(vpe_ctrl->domain, vpe_ctrl->iommu_ctx_dst);
+	if (rc < 0) {
+		pr_err("%s: Device attach failed\n", __func__);
+		goto dst_attach_failed;
+	}
+#endif
 	return rc;
 
+#ifdef CONFIG_MSM_IOMMU
+dst_attach_failed:
+	iommu_detach_device(vpe_ctrl->domain, vpe_ctrl->iommu_ctx_src);
+src_attach_failed:
+#endif
+	msm_cam_clk_enable(&vpe_ctrl->pdev->dev, vpe_clk_info,
+		vpe_ctrl->vpe_clk, ARRAY_SIZE(vpe_clk_info), 0);
+
 vpe_clk_failed:
-	regulator_disable(vpe_ctrl->fs_vpe);
-	regulator_put(vpe_ctrl->fs_vpe);
-	vpe_ctrl->fs_vpe = NULL;
+	if (vpe_ctrl->fs_vpe)
+		regulator_disable(vpe_ctrl->fs_vpe);
 vpe_fs_failed:
 	disable_irq(vpe_ctrl->vpeirq->start);
 	vpe_ctrl->state = VPE_STATE_IDLE;
@@ -946,14 +978,23 @@ int vpe_disable(void)
 	}
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
 
+#ifdef CONFIG_MSM_IOMMU
+	iommu_detach_device(vpe_ctrl->domain, vpe_ctrl->iommu_ctx_dst);
+	iommu_detach_device(vpe_ctrl->domain, vpe_ctrl->iommu_ctx_src);
+#endif
+
+#ifdef CONFIG_ARCH_APQ8064
+	disable_irq(vpe_ctrl->vpeirq->start);
+	tasklet_kill(&vpe_standalone_tasklet);
+#endif
 	msm_cam_clk_enable(&vpe_ctrl->pdev->dev, vpe_clk_info,
 			vpe_ctrl->vpe_clk, ARRAY_SIZE(vpe_clk_info), 0);
 
 	regulator_disable(vpe_ctrl->fs_vpe);
-	regulator_put(vpe_ctrl->fs_vpe);
-	vpe_ctrl->fs_vpe = NULL;
+#ifndef CONFIG_ARCH_APQ8064
 	disable_irq(vpe_ctrl->vpeirq->start);
 	tasklet_kill(&vpe_standalone_tasklet);
+#endif
 	spin_lock_irqsave(&vpe_ctrl->lock, flags);
 	vpe_ctrl->state = VPE_STATE_IDLE;
 	spin_unlock_irqrestore(&vpe_ctrl->lock, flags);
@@ -1137,6 +1178,22 @@ static int sony_vpe_probe(struct platform_device *pdev)
 		goto vpe_device_destroy;
 	}
 
+#ifdef CONFIG_MSM_IOMMU
+	vpe_ctrl->domain_num = msm_cam_server_get_domain_num();
+	if (vpe_ctrl->domain_num < 0) {
+		pr_err("%s: could not register domain\n", __func__);
+		rc = -ENODEV;
+		return rc;
+	}
+	vpe_ctrl->domain =
+		msm_get_iommu_domain(vpe_ctrl->domain_num);
+	if (!vpe_ctrl->domain) {
+		pr_err("%s: cannot find domain\n", __func__);
+		rc = -ENODEV;
+		return rc;
+	}
+#endif
+
 	rc = request_irq(vpe_ctrl->vpeirq->start, vpe_parse_irq,
 		IRQF_TRIGGER_HIGH, "sony_vpe.0", 0);
 	if (rc < 0) {
@@ -1147,9 +1204,30 @@ static int sony_vpe_probe(struct platform_device *pdev)
 		goto vpe_no_resource;
 	}
 
+	vpe_ctrl->fs_vpe = regulator_get(&pdev->dev, "fs_vpe");
+	if (IS_ERR(vpe_ctrl->fs_vpe)) {
+		pr_err("%s: Regulator FS_VPE get failed %ld\n", __func__,
+			PTR_ERR(vpe_ctrl->fs_vpe));
+		vpe_ctrl->fs_vpe = NULL;
+	}
+
 	disable_irq(vpe_ctrl->vpeirq->start);
 
 	vpe_ctrl->pdev = pdev;
+
+
+#ifdef CONFIG_MSM_IOMMU
+	/*get device context for IOMMU*/
+	vpe_ctrl->iommu_ctx_src = msm_iommu_get_ctx("vpe_src"); /*re-confirm*/
+	vpe_ctrl->iommu_ctx_dst = msm_iommu_get_ctx("vpe_dst"); /*re-confirm*/
+	if (!vpe_ctrl->iommu_ctx_src || !vpe_ctrl->iommu_ctx_dst) {
+		release_mem_region(vpe_ctrl->vpemem->start,
+			resource_size(vpe_ctrl->vpemem));
+		pr_err("%s: No iommu fw context found\n", __func__);
+		rc = -ENODEV;
+		goto vpe_no_resource;
+	}
+#endif
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 	vpe_client = msm_ion_client_create(-1, "msm_vpe_standalone");

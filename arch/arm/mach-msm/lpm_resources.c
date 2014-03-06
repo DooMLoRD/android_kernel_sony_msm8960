@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -18,14 +18,14 @@
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/cpu.h>
-#include <mach/mpm.h>
 #include <linux/notifier.h>
 #include <linux/hrtimer.h>
 #include <linux/tick.h>
+#include <mach/mpm.h>
+#include <mach/rpm-smd.h>
 #include "spm.h"
 #include "lpm_resources.h"
 #include "rpm-notifier.h"
-#include <mach/rpm-smd.h>
 #include "idle.h"
 
 /*Debug Definitions*/
@@ -46,7 +46,7 @@ module_param_named(
 static bool msm_lpm_get_rpm_notif = true;
 
 /*Macros*/
-#define VDD_DIG_ACTIVE		(950000)
+#define VDD_DIG_ACTIVE		(5)
 #define VDD_MEM_ACTIVE		(1050000)
 #define MAX_RS_NAME		(16)
 #define MAX_RS_SIZE		(4)
@@ -243,6 +243,7 @@ static int msm_lpm_send_sleep_data(struct msm_rpm_request *handle,
 					uint32_t key, uint8_t *value)
 {
 	int ret = 0;
+	int msg_id;
 
 	if (!handle)
 		return ret;
@@ -255,10 +256,18 @@ static int msm_lpm_send_sleep_data(struct msm_rpm_request *handle,
 		return ret;
 	}
 
-	ret = msm_rpm_send_request_noirq(handle);
-	if (ret < 0) {
+	msg_id = msm_rpm_send_request_noirq(handle);
+	if (!msg_id) {
 		pr_err("%s: Error sending RPM request key %u, handle 0x%x\n",
 				__func__, key, (unsigned int)handle);
+		ret = -EIO;
+		return ret;
+	}
+
+	ret = msm_rpm_wait_for_ack_noirq(msg_id);
+	if (ret < 0) {
+		pr_err("%s: Couldn't get ACK from RPM for Msg %d Error %d",
+				__func__, msg_id, ret);
 		return ret;
 	}
 	if (msm_lpm_debug_mask & MSM_LPMRS_DEBUG_RPM)
@@ -344,18 +353,21 @@ static ssize_t msm_lpm_resource_attr_store(struct kobject *kobj,
 
 /* lpm resource handling functions */
 /* Common */
-static void msm_lpm_notify_common(struct msm_rpm_notifier_data *rpm_notifier_cb,
+static void msm_lpm_notify_common(struct msm_rpm_notifier_data *cb,
 				struct msm_lpm_resource *rs)
 {
-	if ((rpm_notifier_cb->rsc_type == rs->rs_data.type) &&
-			(rpm_notifier_cb->rsc_id == rs->rs_data.id) &&
-			(rpm_notifier_cb->key == rs->rs_data.key)) {
-		BUG_ON(rpm_notifier_cb->size > MAX_RS_SIZE);
+	if ((cb->rsc_type == rs->rs_data.type) &&
+		(cb->rsc_id == rs->rs_data.id) &&
+		(cb->key == rs->rs_data.key)) {
+
+		BUG_ON(cb->size > MAX_RS_SIZE);
 
 		if (rs->valid) {
-			if (rpm_notifier_cb->value)
-				memcpy(&rs->rs_data.value,
-				rpm_notifier_cb->value, rpm_notifier_cb->size);
+			if (cb->value) {
+				memcpy(&rs->rs_data.value, cb->value, cb->size);
+				msm_rpm_add_kvp_data_noirq(rs->rs_data.handle,
+						cb->key, cb->value, cb->size);
+			}
 			else
 				rs->rs_data.value = rs->rs_data.default_value;
 
@@ -610,12 +622,10 @@ static void msm_lpm_notify_pxo(struct msm_rpm_notifier_data
 	msm_lpm_notify_common(rpm_notifier_cb, rs);
 }
 
-/* MPM
-static bool msm_lpm_use_mpm(struct msm_rpmrs_limits *limits)
+static inline bool msm_lpm_use_mpm(struct msm_rpmrs_limits *limits)
 {
-	return ((limits->pxo == MSM_LPM_PXO_OFF) ||
-		(limits->vdd_dig_lower_bound <= VDD_DIG_RET_HIGH));
-}*/
+	return (limits->pxo == MSM_LPM_PXO_OFF);
+}
 
 /* LPM levels interface */
 bool msm_lpm_level_beyond_limit(struct msm_rpmrs_limits *limits)
@@ -638,7 +648,7 @@ bool msm_lpm_level_beyond_limit(struct msm_rpmrs_limits *limits)
 	return beyond_limit;
 }
 
-int msm_lpmrs_enter_sleep(struct msm_rpmrs_limits *limits,
+int msm_lpmrs_enter_sleep(uint32_t sclk_count, struct msm_rpmrs_limits *limits,
 				bool from_idle, bool notify_rpm)
 {
 	int ret = 0;
@@ -659,19 +669,20 @@ int msm_lpmrs_enter_sleep(struct msm_rpmrs_limits *limits,
 	}
 	msm_lpm_get_rpm_notif = true;
 
-	/* MPM Enter sleep
 	if (msm_lpm_use_mpm(limits))
-		msm_mpm_enter_sleep(from_idle);*/
+		msm_mpm_enter_sleep(sclk_count, from_idle);
 
 	return ret;
 }
 
-void msm_lpmrs_exit_sleep(uint32_t sclk_count, struct msm_rpmrs_limits *limits,
-		bool from_idle, bool notify_rpm)
+void msm_lpmrs_exit_sleep(struct msm_rpmrs_limits *limits,
+		bool from_idle, bool notify_rpm, bool collapsed)
 {
 	/* MPM exit sleep
 	if (msm_lpm_use_mpm(limits))
 		msm_mpm_exit_sleep(from_idle);*/
+
+	msm_spm_l2_set_low_power_mode(MSM_SPM_MODE_DISABLED, notify_rpm);
 }
 
 static int msm_lpm_cpu_callback(struct notifier_block *cpu_nb,
@@ -687,7 +698,7 @@ static int msm_lpm_cpu_callback(struct notifier_block *cpu_nb,
 	case CPU_DEAD_FROZEN:
 	case CPU_DEAD:
 		if (num_online_cpus() == 1)
-			rs->rs_data.value = MSM_LPM_L2_CACHE_GDHS;
+			rs->rs_data.value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 		break;
 	}
 	return NOTIFY_OK;
@@ -840,6 +851,7 @@ static int __devinit msm_lpmrs_probe(struct platform_device *pdev)
 		msm_lpm_l2.rs_data.default_value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 		msm_lpm_l2.rs_data.value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 	}
+	msm_pm_set_l2_flush_flag(0);
 	return 0;
 fail:
 	return ret;

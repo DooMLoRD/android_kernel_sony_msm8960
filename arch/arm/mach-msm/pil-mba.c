@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,11 +37,12 @@
 
 #define STATUS_META_DATA_AUTH_SUCCESS	0x3
 #define STATUS_AUTH_COMPLETE		0x4
-#define STATUS_ERROR_MASK		BIT(31)
 
-#define AUTH_TIMEOUT_US			10000000
 #define PROXY_TIMEOUT_MS		10000
 #define POLL_INTERVAL_US		50
+
+static int modem_auth_timeout_ms = 10000;
+module_param(modem_auth_timeout_ms, int, S_IRUGO | S_IWUSR);
 
 struct mba_data {
 	void __iomem *reg_base;
@@ -75,7 +76,7 @@ static int pil_mba_init_image(struct pil_desc *pil,
 			      const u8 *metadata, size_t size)
 {
 	struct mba_data *drv = dev_get_drvdata(pil->dev);
-	u32 status;
+	s32 status;
 	int ret;
 
 	/* Copy metadata to assigned shared buffer location */
@@ -89,10 +90,14 @@ static int pil_mba_init_image(struct pil_desc *pil,
 	writel_relaxed(drv->metadata_phys, drv->reg_base + RMB_PMI_META_DATA);
 	writel_relaxed(CMD_META_DATA_READY, drv->reg_base + RMB_MBA_COMMAND);
 	ret = readl_poll_timeout(drv->reg_base + RMB_MBA_STATUS, status,
-		status == STATUS_META_DATA_AUTH_SUCCESS,
-		POLL_INTERVAL_US, AUTH_TIMEOUT_US);
-	if (ret)
+		status == STATUS_META_DATA_AUTH_SUCCESS || status < 0,
+		POLL_INTERVAL_US, modem_auth_timeout_ms * 1000);
+	if (ret) {
 		dev_err(pil->dev, "MBA authentication timed out\n");
+	} else if (status < 0) {
+		dev_err(pil->dev, "MBA returned error %d\n", status);
+		ret = -EINVAL;
+	}
 
 	return ret;
 }
@@ -101,6 +106,7 @@ static int pil_mba_verify_blob(struct pil_desc *pil, u32 phy_addr,
 			       size_t size)
 {
 	struct mba_data *drv = dev_get_drvdata(pil->dev);
+	s32 status;
 
 	/* Begin image authentication */
 	if (drv->img_length == 0) {
@@ -111,28 +117,33 @@ static int pil_mba_verify_blob(struct pil_desc *pil, u32 phy_addr,
 	drv->img_length += size;
 	writel_relaxed(drv->img_length, drv->reg_base + RMB_PMI_CODE_LENGTH);
 
-	return readl_relaxed(drv->reg_base + RMB_MBA_STATUS)
-			& STATUS_ERROR_MASK;
+	status = readl_relaxed(drv->reg_base + RMB_MBA_STATUS);
+	if (status < 0) {
+		dev_err(pil->dev, "MBA returned error %d\n", status);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int pil_mba_auth(struct pil_desc *pil)
 {
 	struct mba_data *drv = dev_get_drvdata(pil->dev);
 	int ret;
-	u32 status;
+	s32 status;
 
 	/* Wait for all segments to be authenticated or an error to occur */
 	ret = readl_poll_timeout(drv->reg_base + RMB_MBA_STATUS, status,
-			status == STATUS_AUTH_COMPLETE ||
-			status & STATUS_ERROR_MASK,
-			50, AUTH_TIMEOUT_US);
-	if (ret)
-		return ret;
+			status == STATUS_AUTH_COMPLETE || status < 0,
+			50, modem_auth_timeout_ms * 1000);
+	if (ret) {
+		dev_err(pil->dev, "MBA authentication timed out\n");
+	} else if (status < 0) {
+		dev_err(pil->dev, "MBA returned error %d\n", status);
+		ret = -EINVAL;
+	}
 
-	if (status & STATUS_ERROR_MASK)
-		return -EINVAL;
-
-	return 0;
+	return ret;
 }
 
 static int pil_mba_shutdown(struct pil_desc *pil)

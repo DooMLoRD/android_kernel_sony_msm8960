@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,6 +44,28 @@
 			break; \
 		if (sleep_us) \
 			usleep_range(DIV_ROUND_UP(sleep_us, 4), sleep_us); \
+	} \
+	(cond) ? 0 : -ETIMEDOUT; \
+})
+
+/**
+ * readl_poll_timeout_noirq - Periodically poll an address until a condition is met or a timeout occurs
+ * @addr: Address to poll
+ * @val: Variable to read the value into
+ * @cond: Break condition (usually involving @val)
+ * @max_reads: Maximum number of reads before giving up
+ * @time_between_us: Time to udelay() between successive reads
+ *
+ * Returns 0 on success and -ETIMEDOUT upon a timeout.
+ */
+#define readl_poll_timeout_noirq(addr, val, cond, max_reads, time_between_us) \
+({ \
+	int count; \
+	for (count = (max_reads); count > 0; count--) { \
+		(val) = readl(addr); \
+		if (cond) \
+			break; \
+		udelay(time_between_us); \
 	} \
 	(cond) ? 0 : -ETIMEDOUT; \
 })

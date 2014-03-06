@@ -1,7 +1,7 @@
 /* drivers/video/msm/mipi_nt35565_panels/mipi_sharp_ls038k3sx01.c
  *
  * Copyright (C) [2011] Sony Ericsson Mobile Communications AB.
- * Copyright (C) 2012 Sony Mobile Communications AB.
+ * Copyright (C) 2012-2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2; as
@@ -560,6 +560,7 @@ static struct msm_panel_info *get_panel_info(void)
 	pinfo.mipi.insert_dcs_cmd = TRUE;
 	pinfo.mipi.wr_mem_continue = 0x3c;
 	pinfo.mipi.wr_mem_start = 0x2c;
+	pinfo.mipi.esc_byte_ratio = 4;
 	pinfo.mipi.dsi_phy_db =
 		(struct mipi_dsi_phy_ctrl *)dsi_cmd_mode_phy_db;
 

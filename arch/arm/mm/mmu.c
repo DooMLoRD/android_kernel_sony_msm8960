@@ -33,6 +33,8 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
+#include <asm/user_accessible_timer.h>
+
 #include "mm.h"
 
 /*
@@ -309,6 +311,13 @@ static struct mem_type mem_types[] = {
 		.prot_l1   = PMD_TYPE_TABLE,
 		.domain    = DOMAIN_KERNEL,
 	},
+	[MT_DEVICE_USER_ACCESSIBLE] = {
+		.prot_pte  = PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
+				L_PTE_SHARED | L_PTE_USER | L_PTE_RDONLY,
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PROT_SECT_DEVICE | PMD_SECT_S,
+		.domain    = DOMAIN_IO,
+	},
 };
 
 const struct mem_type *get_mem_type(unsigned int type)
@@ -344,6 +353,8 @@ static void __init build_mem_type_table(void)
 	}
 	if (is_smp())
 		cachepolicy = CPOLICY_WRITEALLOC;
+
+	cachepolicy = CPOLICY_WRITETHROUGH;
 
 	/*
 	 * Strip out features not present on earlier architectures.
@@ -764,7 +775,9 @@ static void __init create_mapping(struct map_desc *md, bool force_pages)
 	const struct mem_type *type;
 	pgd_t *pgd;
 
-	if (md->virtual != vectors_base() && md->virtual < TASK_SIZE) {
+	if ((md->virtual != vectors_base() &&
+		md->virtual != get_user_accessible_timers_base()) &&
+			md->virtual < TASK_SIZE) {
 		printk(KERN_WARNING "BUG: not creating mapping for 0x%08llx"
 		       " at 0x%08lx in user region\n",
 		       (long long)__pfn_to_phys((u64)md->pfn), md->virtual);
@@ -861,7 +874,7 @@ static void __init pmd_empty_section_gap(unsigned long addr)
 	vm = early_alloc_aligned(sizeof(*vm), __alignof__(*vm));
 	vm->addr = (void *)addr;
 	vm->size = SECTION_SIZE;
-	vm->flags = VM_IOREMAP | VM_ARM_EMPTY_MAPPING;
+	vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
 	vm->caller = pmd_empty_section_gap;
 	vm_area_add_early(vm);
 }
@@ -874,7 +887,7 @@ static void __init fill_pmd_gaps(void)
 
 	/* we're still single threaded hence no lock needed here */
 	for (vm = vmlist; vm; vm = vm->next) {
-		if (!(vm->flags & (VM_ARM_STATIC_MAPPING | VM_ARM_EMPTY_MAPPING)))
+		if (!(vm->flags & VM_ARM_STATIC_MAPPING))
 			continue;
 		addr = (unsigned long)vm->addr;
 		if (addr < next)
@@ -953,10 +966,6 @@ void __init sanity_check_meminfo(void)
 	find_membank0_hole();
 #endif
 
-#if (defined CONFIG_HIGHMEM) && (defined CONFIG_FIX_MOVABLE_ZONE)
-	if (movable_reserved_size && __pa(vmalloc_min) > movable_reserved_start)
-		vmalloc_min = __va(movable_reserved_start);
-#endif
 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
 		struct membank *bank = &meminfo.bank[j];
 		*bank = meminfo.bank[i];
@@ -1202,6 +1211,20 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	if (mdesc->map_io)
 		mdesc->map_io();
 	fill_pmd_gaps();
+
+	if (use_user_accessible_timers()) {
+		/*
+		 * Generate a mapping for the timer page.
+		 */
+		int page_addr = get_timer_page_address();
+		if (page_addr != ARM_USER_ACCESSIBLE_TIMERS_INVALID_PAGE) {
+			map.pfn = __phys_to_pfn(page_addr);
+			map.virtual = CONFIG_ARM_USER_ACCESSIBLE_TIMER_BASE;
+			map.length = PAGE_SIZE;
+			map.type = MT_DEVICE_USER_ACCESSIBLE;
+			create_mapping(&map, false);
+		}
+	}
 
 	/*
 	 * Finally flush the caches and tlb to ensure that we're in a

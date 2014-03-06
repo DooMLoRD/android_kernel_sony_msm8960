@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,6 +54,7 @@
 
 /* PMIC Interrupts */
 #define PM8038_RTC_ALARM_IRQ		PM8038_IRQ_BLOCK_BIT(4, 7)
+#define PM8038_BATT_ALARM_IRQ		PM8921_IRQ_BLOCK_BIT(5, 6)
 #define PM8038_PWRKEY_REL_IRQ		PM8038_IRQ_BLOCK_BIT(6, 2)
 #define PM8038_PWRKEY_PRESS_IRQ		PM8038_IRQ_BLOCK_BIT(6, 3)
 #define PM8038_KEYPAD_IRQ		PM8038_IRQ_BLOCK_BIT(9, 2)
@@ -82,6 +83,7 @@ struct pm8038_platform_data {
 	struct pm8921_bms_platform_data		*bms_pdata;
 	struct pm8xxx_adc_platform_data		*adc_pdata;
 	struct pm8xxx_led_platform_data		*leds_pdata;
+	struct pm8xxx_vibrator_platform_data	*vibrator_pdata;
 	struct pm8xxx_ccadc_platform_data	*ccadc_pdata;
 	struct pm8xxx_spk_platform_data		*spk_pdata;
 };

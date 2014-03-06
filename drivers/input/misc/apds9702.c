@@ -76,6 +76,16 @@ static int apds9702_write_byte(struct i2c_client *i2c_client, u8 reg, u8 val)
 	return -EIO;
 }
 
+static void apds9702_report(struct apds9702data *data)
+{
+	struct apds9702_platform_data *pdata = data->client->dev.platform_data;
+	int d = gpio_get_value(pdata->gpio_dout);
+	dev_dbg(&data->client->dev, "%s: gpio = %d\n", __func__, d);
+	input_report_abs(data->input_dev, ABS_DISTANCE,
+		d == DOUT_VALUE_IF_DETECTED ? 0 : 255);
+	input_sync(data->input_dev);
+}
+
 static int apds9702_do_sensing(struct apds9702data *data, int enable)
 {
 	int err = 0;
@@ -89,8 +99,11 @@ static int apds9702_do_sensing(struct apds9702data *data, int enable)
 						data->ctl_reg >> 8);
 		if (err)
 			pdata->hw_config(&data->client->dev, 0);
-		else
+		else {
 			data->active = 1;
+			apds9702_report(data);
+			return 0;
+		}
 	} else {
 		err = apds9702_write_byte(data->client, 0, 0);
 		pdata->hw_config(&data->client->dev, 0);
@@ -105,18 +118,12 @@ static int apds9702_do_sensing(struct apds9702data *data, int enable)
 static irqreturn_t apds9702_work(int irq, void *handle)
 {
 	struct apds9702data *data = handle;
-	struct apds9702_platform_data *pdata = data->client->dev.platform_data;
 
 	dev_dbg(&data->client->dev, "%s\n", __func__);
 
 	mutex_lock(&data->lock);
-	if (data->active) {
-		int d = gpio_get_value(pdata->gpio_dout);
-		dev_dbg(&data->client->dev, "%s: gpio = %d\n", __func__, d);
-		input_report_abs(data->input_dev, ABS_DISTANCE,
-				 d == DOUT_VALUE_IF_DETECTED ? 0 : 255);
-		input_sync(data->input_dev);
-	}
+	if (data->active)
+		apds9702_report(data);
 	mutex_unlock(&data->lock);
 	return IRQ_HANDLED;
 }

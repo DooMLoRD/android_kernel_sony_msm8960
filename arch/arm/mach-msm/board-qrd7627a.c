@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,9 +31,8 @@
 #include <linux/memblock.h>
 #include <linux/input/ft5x06_ts.h>
 #include <linux/msm_adc.h>
-#include <linux/fmem.h>
 #include <linux/regulator/msm-gpio-regulator.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <asm/mach/mmc.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -76,6 +75,12 @@
 #define I2C_PIN_CTL       0x15
 #define I2C_NORMAL        0x40
 
+#define SNDDEV_CAP_NONE 0x0
+#define SNDDEV_CAP_RX 0x1 /* RX direction */
+#define SNDDEV_CAP_TX 0x2 /* TX direction */
+#define SNDDEV_CAP_VOICE 0x4 /* Support voice call */
+#define SNDDEV_CAP_FM 0x10 /* Support FM radio */
+#define SNDDEV_CAP_TTY 0x20 /* Support TTY */
 
 static struct platform_device msm_wlan_ar6000_pm_device = {
 	.name           = "wlan_ar6000_pm_dev",
@@ -131,7 +136,7 @@ static struct msm_i2c_platform_data msm_gsbi1_qup_i2c_pdata = {
 };
 
 #ifdef CONFIG_ARCH_MSM7X27A
-#define MSM_PMEM_MDP_SIZE       0x2300000
+#define MSM_PMEM_MDP_SIZE       0x1B00000
 #define MSM_PMEM_ADSP_SIZE      0x1200000
 #define CAMERA_ZSL_SIZE		(SZ_1M * 60)
 
@@ -396,9 +401,6 @@ static struct android_pmem_platform_data android_pmem_adsp_pdata = {
 	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
 	.cached = 1,
 	.memory_type = MEMTYPE_EBI1,
-	.request_region = request_fmem_c_region,
-	.release_region = release_fmem_c_region,
-	.reusable = 1,
 };
 
 static struct platform_device android_pmem_adsp_device = {
@@ -424,6 +426,199 @@ static int __init pmem_adsp_size_setup(char *p)
 }
 
 early_param("pmem_adsp_size", pmem_adsp_size_setup);
+
+#define SND(desc, num) { .name = #desc, .id = num }
+static struct snd_endpoint snd_endpoints_list[] = {
+	SND(HANDSET, 0),
+	SND(MONO_HEADSET, 2),
+	SND(HEADSET, 3),
+	SND(SPEAKER, 6),
+	SND(TTY_HEADSET, 8),
+	SND(TTY_VCO, 9),
+	SND(TTY_HCO, 10),
+	SND(BT, 12),
+	SND(IN_S_SADC_OUT_HANDSET, 16),
+	SND(IN_S_SADC_OUT_SPEAKER_PHONE, 25),
+	SND(FM_DIGITAL_STEREO_HEADSET, 26),
+	SND(FM_DIGITAL_SPEAKER_PHONE, 27),
+	SND(FM_DIGITAL_BT_A2DP_HEADSET, 28),
+	SND(STEREO_HEADSET_AND_SPEAKER, 31),
+	SND(CURRENT, 0x7FFFFFFE),
+	SND(FM_ANALOG_STEREO_HEADSET, 35),
+	SND(FM_ANALOG_STEREO_HEADSET_CODEC, 36),
+};
+#undef SND
+
+static struct msm_snd_endpoints msm_device_snd_endpoints = {
+	.endpoints = snd_endpoints_list,
+	.num = sizeof(snd_endpoints_list) / sizeof(struct snd_endpoint)
+};
+
+static struct platform_device msm_device_snd = {
+	.name = "msm_snd",
+	.id = -1,
+	.dev    = {
+		.platform_data = &msm_device_snd_endpoints
+	},
+};
+
+#define CAD(desc, num, cap) { .name = #desc, .id = num, .capability = cap, }
+static struct cad_endpoint cad_endpoints_list[] = {
+	CAD(NONE, 0, SNDDEV_CAP_NONE),
+	CAD(HANDSET_SPKR, 1, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(HANDSET_MIC, 2, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_MIC, 3, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_SPKR_MONO, 4, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_SPKR_STEREO, 5, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_MIC, 6, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_MONO, 7, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_STEREO, 8, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(BT_SCO_MIC, 9, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(BT_SCO_SPKR, 10, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(BT_A2DP_SPKR, 11, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(TTY_HEADSET_MIC, 12, (SNDDEV_CAP_TX | \
+			SNDDEV_CAP_VOICE | SNDDEV_CAP_TTY)),
+	CAD(TTY_HEADSET_SPKR, 13, (SNDDEV_CAP_RX | \
+			SNDDEV_CAP_VOICE | SNDDEV_CAP_TTY)),
+	CAD(HEADSET_STEREO_PLUS_SPKR_MONO_RX, 19, (SNDDEV_CAP_TX | \
+				SNDDEV_CAP_VOICE)),
+	CAD(LP_FM_HEADSET_SPKR_STEREO_RX, 25, (SNDDEV_CAP_TX | SNDDEV_CAP_FM)),
+	CAD(I2S_RX, 26, (SNDDEV_CAP_RX)),
+	CAD(SPEAKER_PHONE_MIC_ENDFIRE, 45, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HANDSET_MIC_ENDFIRE, 46, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(I2S_TX, 48, (SNDDEV_CAP_TX)),
+	CAD(LP_FM_HEADSET_SPKR_STEREO_PLUS_HEADSET_SPKR_STEREO_RX, 57, \
+				(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_HEADSET_SPKR_STEREO, 65, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_SPEAKER_PHONE_MONO, 67, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_BT_A2DP_SPKR, 69, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(MAX, 80, SNDDEV_CAP_NONE),
+};
+#undef CAD
+
+static struct msm_cad_endpoints msm_device_cad_endpoints = {
+	.endpoints = cad_endpoints_list,
+	.num = sizeof(cad_endpoints_list) / sizeof(struct cad_endpoint)
+};
+
+static struct platform_device msm_device_cad = {
+	.name = "msm_cad",
+	.id = -1,
+	.dev    = {
+		.platform_data = &msm_device_cad_endpoints
+	},
+};
+
+#define DEC0_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
+	(1<<MSM_ADSP_CODEC_AAC)|(1<<MSM_ADSP_CODEC_WMA)| \
+	(1<<MSM_ADSP_CODEC_WMAPRO)|(1<<MSM_ADSP_CODEC_AMRWB)| \
+	(1<<MSM_ADSP_CODEC_AMRNB)|(1<<MSM_ADSP_CODEC_WAV)| \
+	(1<<MSM_ADSP_CODEC_ADPCM)|(1<<MSM_ADSP_CODEC_YADPCM)| \
+	(1<<MSM_ADSP_CODEC_EVRC)|(1<<MSM_ADSP_CODEC_QCELP))| \
+	(1<<MSM_ADSP_CODEC_AC3)
+#define DEC1_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
+	(1<<MSM_ADSP_CODEC_AAC)|(1<<MSM_ADSP_CODEC_WMA)| \
+	(1<<MSM_ADSP_CODEC_WMAPRO)|(1<<MSM_ADSP_CODEC_AMRWB)| \
+	(1<<MSM_ADSP_CODEC_AMRNB)|(1<<MSM_ADSP_CODEC_WAV)| \
+	(1<<MSM_ADSP_CODEC_ADPCM)|(1<<MSM_ADSP_CODEC_YADPCM)| \
+	(1<<MSM_ADSP_CODEC_EVRC)|(1<<MSM_ADSP_CODEC_QCELP))
+#define DEC2_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
+	(1<<MSM_ADSP_CODEC_AAC)|(1<<MSM_ADSP_CODEC_WMA)| \
+	(1<<MSM_ADSP_CODEC_WMAPRO)|(1<<MSM_ADSP_CODEC_AMRWB)| \
+	(1<<MSM_ADSP_CODEC_AMRNB)|(1<<MSM_ADSP_CODEC_WAV)| \
+	(1<<MSM_ADSP_CODEC_ADPCM)|(1<<MSM_ADSP_CODEC_YADPCM)| \
+	(1<<MSM_ADSP_CODEC_EVRC)|(1<<MSM_ADSP_CODEC_QCELP))
+#define DEC3_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
+	(1<<MSM_ADSP_CODEC_AAC)|(1<<MSM_ADSP_CODEC_WMA)| \
+	(1<<MSM_ADSP_CODEC_WMAPRO)|(1<<MSM_ADSP_CODEC_AMRWB)| \
+	(1<<MSM_ADSP_CODEC_AMRNB)|(1<<MSM_ADSP_CODEC_WAV)| \
+	(1<<MSM_ADSP_CODEC_ADPCM)|(1<<MSM_ADSP_CODEC_YADPCM)| \
+	(1<<MSM_ADSP_CODEC_EVRC)|(1<<MSM_ADSP_CODEC_QCELP))
+#define DEC4_FORMAT (1<<MSM_ADSP_CODEC_MIDI)
+
+static unsigned int dec_concurrency_table[] = {
+	/* Audio LP */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DMA)), 0,
+	0, 0, 0,
+
+	/* Concurrency 1 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+
+	 /* Concurrency 2 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+
+	/* Concurrency 3 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+
+	/* Concurrency 4 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+
+	/* Concurrency 5 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+
+	/* Concurrency 6 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_TUNNEL)|
+			(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	0, 0, 0, 0,
+
+	/* Concurrency 7 */
+	(DEC0_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC1_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC2_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC3_FORMAT|(1<<MSM_ADSP_MODE_NONTUNNEL)|(1<<MSM_ADSP_OP_DM)),
+	(DEC4_FORMAT),
+};
+
+#define DEC_INFO(name, queueid, decid, nr_codec) { .module_name = name, \
+	.module_queueid = queueid, .module_decid = decid, \
+	.nr_codec_support = nr_codec}
+
+static struct msm_adspdec_info dec_info_list[] = {
+	DEC_INFO("AUDPLAY0TASK", 13, 0, 11), /* AudPlay0BitStreamCtrlQueue */
+	DEC_INFO("AUDPLAY1TASK", 14, 1, 11),  /* AudPlay1BitStreamCtrlQueue */
+	DEC_INFO("AUDPLAY2TASK", 15, 2, 11),  /* AudPlay2BitStreamCtrlQueue */
+	DEC_INFO("AUDPLAY3TASK", 16, 3, 11),  /* AudPlay3BitStreamCtrlQueue */
+	DEC_INFO("AUDPLAY4TASK", 17, 4, 1),  /* AudPlay4BitStreamCtrlQueue */
+};
+
+static struct msm_adspdec_database msm_device_adspdec_database = {
+	.num_dec = ARRAY_SIZE(dec_info_list),
+	.num_concurrency_support = (ARRAY_SIZE(dec_concurrency_table) / \
+					ARRAY_SIZE(dec_info_list)),
+	.dec_concurrency_table = dec_concurrency_table,
+	.dec_info_list = dec_info_list,
+};
+
+static struct platform_device msm_device_adspdec = {
+	.name = "msm_adspdec",
+	.id = -1,
+	.dev    = {
+		.platform_data = &msm_device_adspdec_database
+	},
+};
 
 static struct android_pmem_platform_data android_pmem_audio_pdata = {
 	.name = "pmem_audio",
@@ -453,9 +648,9 @@ static struct platform_device android_pmem_device = {
 static u32 msm_calculate_batt_capacity(u32 current_voltage);
 
 static struct msm_psy_batt_pdata msm_psy_batt_data = {
-	.voltage_min_design     = 3200,
+	.voltage_min_design     = 3500,
 	.voltage_max_design     = 4200,
-	.voltage_fail_safe      = 3340,
+	.voltage_fail_safe      = 3598,
 	.avail_chg_sources      = AC_CHG | USB_CHG ,
 	.batt_technology        = POWER_SUPPLY_TECHNOLOGY_LION,
 	.calculate_capacity     = &msm_calculate_batt_capacity,
@@ -499,13 +694,29 @@ static struct platform_device msm_adc_device = {
 	},
 };
 
-static struct fmem_platform_data fmem_pdata;
-
-static struct platform_device fmem_device = {
-	.name = "fmem",
-	.id = 1,
-	.dev = { .platform_data = &fmem_pdata },
+#ifdef CONFIG_MSM_RTB
+static struct msm_rtb_platform_data msm7627a_rtb_pdata = {
+	.size = SZ_1M,
 };
+
+static int __init msm_rtb_set_buffer_size(char *p)
+{
+	int s;
+
+	s = memparse(p, NULL);
+	msm7627a_rtb_pdata.size = ALIGN(s, SZ_4K);
+	return 0;
+}
+early_param("msm_rtb_size", msm_rtb_set_buffer_size);
+
+struct platform_device msm7627a_rtb_device = {
+	.name = "msm_rtb",
+	.id   = -1,
+	.dev  = {
+		 .platform_data = &msm7627a_rtb_pdata,
+	},
+};
+#endif
 
 #define GPIO_VREG_INIT(_id, _reg_name, _gpio_label, _gpio, _active_low) \
 	[GPIO_VREG_ID_##_id] = { \
@@ -578,7 +789,9 @@ static struct platform_device *common_devices[] __initdata = {
 	&asoc_msm_dai0,
 	&asoc_msm_dai1,
 	&msm_adc_device,
-	&fmem_device,
+#ifdef CONFIG_MSM_RTB
+	&msm7627a_rtb_device,
+#endif
 #ifdef CONFIG_ION_MSM
 	&ion_dev,
 #endif
@@ -655,10 +868,7 @@ static struct ion_co_heap_pdata co_ion_pdata = {
  * These heaps are listed in the order they will be allocated.
  * Don't swap the order unless you know what you are doing!
  */
-static struct ion_platform_data ion_pdata = {
-	.nr = MSM_ION_HEAP_NUM,
-	.has_outer_cache = 1,
-	.heaps = {
+struct ion_platform_heap qrd7627a_heaps[] = {
 		{
 			.id	= ION_SYSTEM_HEAP_ID,
 			.type	= ION_HEAP_TYPE_SYSTEM,
@@ -690,7 +900,12 @@ static struct ion_platform_data ion_pdata = {
 			.extra_data = (void *)&co_ion_pdata,
 		},
 #endif
-	}
+};
+
+static struct ion_platform_data ion_pdata = {
+	.nr = MSM_ION_HEAP_NUM,
+	.has_outer_cache = 1,
+	.heaps = qrd7627a_heaps,
 };
 
 static struct platform_device ion_dev = {
@@ -711,6 +926,17 @@ static struct memtype_reserve msm7627a_reserve_table[] __initdata = {
 	},
 };
 
+#ifdef CONFIG_MSM_RTB
+static void __init reserve_rtb_memory(void)
+{
+	msm7627a_reserve_table[MEMTYPE_EBI1].size += msm7627a_rtb_pdata.size;
+}
+#else
+static void __init reserve_rtb_memory(void)
+{
+}
+#endif
+
 #ifdef CONFIG_ANDROID_PMEM
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct android_pmem_platform_data *pmem_pdata_array[] __initdata = {
@@ -725,32 +951,9 @@ static void __init size_pmem_devices(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
-	unsigned int i;
-	unsigned int reusable_count = 0;
-
 	android_pmem_adsp_pdata.size = pmem_adsp_size;
 	android_pmem_pdata.size = pmem_mdp_size;
 	android_pmem_audio_pdata.size = pmem_audio_size;
-
-	fmem_pdata.size = 0;
-	fmem_pdata.align = PAGE_SIZE;
-
-	/* Find pmem devices that should use FMEM (reusable) memory.
-	 */
-	for (i = 0; i < ARRAY_SIZE(pmem_pdata_array); ++i) {
-		struct android_pmem_platform_data *pdata = pmem_pdata_array[i];
-
-		if (!reusable_count && pdata->reusable)
-			fmem_pdata.size += pdata->size;
-
-		reusable_count += (pdata->reusable) ? 1 : 0;
-
-		if (pdata->reusable && reusable_count > 1) {
-			pr_err("%s: Too many PMEM devices specified as reusable. PMEM device %s was not configured as reusable.\n",
-				__func__, pdata->name);
-			pdata->reusable = 0;
-		}
-	}
 #endif
 #endif
 }
@@ -802,6 +1005,7 @@ static void __init msm7627a_calculate_reserve_sizes(void)
 	reserve_pmem_memory();
 	size_ion_devices();
 	reserve_ion_memory();
+	reserve_rtb_memory();
 }
 
 static int msm7627a_paddr_to_memtype(unsigned int paddr)

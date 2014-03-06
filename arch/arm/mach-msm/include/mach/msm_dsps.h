@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -86,6 +86,7 @@ struct dsps_regulator_info {
  * @smem_start - start of the smem region as physical address
  * @smem_size - size of the smem region in bytes
  * @ppss_pause_reg - Offset to the PPSS_PAUSE register
+ * @ppss_wdog_unmasked_int_en_reg - Offset to PPSS_WDOG_UNMASKED_INT_EN register
  * @signature - signature for validity check.
  */
 struct msm_dsps_platform_data {
@@ -109,6 +110,7 @@ struct msm_dsps_platform_data {
 	int smem_start;
 	int smem_size;
 	int ppss_pause_reg;
+	int ppss_wdog_unmasked_int_en_reg;
 	u32 signature;
 };
 

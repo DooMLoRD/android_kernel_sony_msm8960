@@ -915,14 +915,6 @@ config USB_G_ANDROID
 	  Each function can be configured and enabled/disabled
 	  dynamically from userspace through a sysfs interface.
 
-config USB_ANDROID_DTF
-	boolean "ic-transfer driver"
-	depends on USB_G_ANDROID
-	default n
-	help
-	  Enabling this option adds ic-transfer driver support to the
-	  android gadget.
-
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET
@@ -1139,5 +1131,18 @@ config USB_ANDROID_RMNET_CTRL_SMD
 	 It uses QUALCOMM MSM Interface for control
 	 transfers. This option enables only control interface.
 	 Data interface used is BAM.
+
+config USB_ANDROID_CDC_ECM
+	boolean "Android Gadget support CDC ECM"
+	depends on USB_G_ANDROID
+	default n
+	help
+	  Android Gadget USB support CDC ECM instead of RNDIS
+
+config USB_MIRRORLINK
+       boolean "Handle MirrorLink USB command"
+       default n
+       help
+         Enabling this option adds support for MirrorLink USB command.
 
 endif # USB_GADGET

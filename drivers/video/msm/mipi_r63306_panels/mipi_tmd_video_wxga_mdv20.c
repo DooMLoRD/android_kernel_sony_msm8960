@@ -328,6 +328,7 @@ static struct msm_panel_info *get_panel_info(void)
 	mipi_video_tmd_panel.mipi.mdp_trigger = DSI_CMD_TRIGGER_SW;
 	mipi_video_tmd_panel.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
 	mipi_video_tmd_panel.mipi.frame_rate  = 60;
+	pinfo.mipi.esc_byte_ratio = 2;
 	mipi_video_tmd_panel.mipi.dsi_phy_db =
 		(struct mipi_dsi_phy_ctrl *)dsi_video_mode_phy_db;
 

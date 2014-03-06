@@ -1,6 +1,6 @@
 /* Qualcomm Crypto Engine driver.
  *
- * Copyright (c) 2011 - 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011 - 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1844,6 +1844,8 @@ static int _setup_auth_cmdptrlists(struct qce_device *pce_dev,
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->ce_data_in);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_byte_count);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_result_20);
 	*cmd_ptr_vaddr++ = QCE_SET_LAST_CMD_PTR(cmdlist->get_status_ocu);
@@ -1858,6 +1860,8 @@ static int _setup_auth_cmdptrlists(struct qce_device *pce_dev,
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->set_auth_byte_count);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->set_go_proc);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->ce_data_in);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_byte_count);
@@ -1877,6 +1881,8 @@ static int _setup_auth_cmdptrlists(struct qce_device *pce_dev,
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->ce_data_in);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_byte_count);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_result_20);
 	*cmd_ptr_vaddr++ = QCE_SET_LAST_CMD_PTR(cmdlist->get_status_ocu);
@@ -1892,6 +1898,8 @@ static int _setup_auth_cmdptrlists(struct qce_device *pce_dev,
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->set_auth_byte_count);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->set_go_proc);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->ce_data_in);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
+	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_status_wait);
 	*cmd_ptr_vaddr++ = QCE_SET_CMD_PTR(cmdlist->get_auth_byte_count);
@@ -2599,11 +2607,11 @@ int qce_hw_support(void *handle, struct ce_hw_support *ce_support)
 	ce_support->aes_xts = true;
 	ce_support->aes_ccm = true;
 	ce_support->ota = false;
+	ce_support->aligned_only = false;
+	ce_support->bam = false;
 	return 0;
 }
 EXPORT_SYMBOL(qce_hw_support);
 
 MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Mona Hossain <mhossain@codeaurora.org>");
 MODULE_DESCRIPTION("Crypto Engine driver");
-MODULE_VERSION("2.17");

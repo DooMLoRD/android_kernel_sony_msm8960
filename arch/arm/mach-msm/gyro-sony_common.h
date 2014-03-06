@@ -24,4 +24,12 @@ int check_bma250_sleep_state(void);
 void vote_bma250_sleep_state(int id, int vote);
 #endif
 
+#ifdef CONFIG_SENSORS_MPU6050
+extern int mpu6050_gpio_setup(struct device *dev, int enable);
+extern void mpu6050_hw_config(int enable);
+extern void mpu6050_power_mode(struct device *dev, int enable);
+extern struct mpu_platform_data mpu6050_data;
+extern struct ext_slave_platform_data mpu_compass_data;
+#endif /* CONFIG_SENSORS_MPU6050 */
+
 #endif

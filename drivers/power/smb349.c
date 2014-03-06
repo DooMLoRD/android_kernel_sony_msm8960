@@ -1,4 +1,4 @@
-/* Copyright (c) 2012 Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -616,6 +616,8 @@ static int __devinit smb349_probe(struct i2c_client *client,
 		goto chg_en_gpio_fail;
 
 	the_smb349_chg = smb349_chg;
+
+	spin_lock_init(&smb349_chg->lock);
 
 	create_debugfs_entries(smb349_chg);
 	INIT_WORK(&smb349_chg->chg_work, chg_worker);

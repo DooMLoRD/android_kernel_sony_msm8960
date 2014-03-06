@@ -18,9 +18,13 @@
 static char mcap[] = {
 	0xB0, 0x00
 };
+
+#ifdef CONFIG_FB_MSM_RECOVER_PANEL
 static char mcap_unlock_reg[] = {
 	0xB0, 0x00
 };
+#endif
+
 static char ltps_if_ctrl[] = {
 	0xC4, 0xC3, 0x29
 };
@@ -360,7 +364,7 @@ static struct dsi_cmd_desc nvm_write_user_cmds[] = {
 						nvm_erase_and_write_user},
 };
 
-struct dsi_nvm_rewrite_ctl dsi_nvrw_ctl = {
+static struct dsi_nvm_rewrite_ctl dsi_nvrw_ctl = {
 	.nvm_erase_all		= nvm_erase_all_cmds,
 	.nvm_read_e4		= nvm_read_e4_cmds,
 	.nvm_erase_finish	= nvm_erase_finish_cmds,

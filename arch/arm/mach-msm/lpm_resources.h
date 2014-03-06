@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -71,6 +71,7 @@ bool msm_lpm_level_beyond_limit(struct msm_rpmrs_limits *limits);
  * on the low power mode being entered. L2 low power mode is also set in
  * this function.
 
+ * @sclk_count: wakeup counter for RPM.
  * @limits: pointer to the resource limits of the low power mode being entered.
  * @from_idle: bool to determine if this call being made as a part of
  *             idle power collapse.
@@ -78,19 +79,19 @@ bool msm_lpm_level_beyond_limit(struct msm_rpmrs_limits *limits);
  *
  * returns 0 on success.
  */
-int msm_lpmrs_enter_sleep(struct msm_rpmrs_limits *limits,
+int msm_lpmrs_enter_sleep(uint32_t sclk_count, struct msm_rpmrs_limits *limits,
 	bool from_idle, bool notify_rpm);
 
 /**
  * msm_lpmrs_exit_sleep() - Exit sleep, reset the MPM and L2 mode.
- * @ sclk_count - Sleep Clock count.
  * @ limits: pointer to resource limits of the most recent low power mode.
  * @from_idle: bool to determine if this call being made as a part of
  *             idle power collapse.
  * @notify_rpm: bool that informs if this is an RPM notified power collapse.
+ * @collapsed: bool that informs if the Krait was power collapsed.
  */
-void msm_lpmrs_exit_sleep(uint32_t sclk_count, struct msm_rpmrs_limits *limits,
-	bool from_idle, bool notify_rpm);
+void msm_lpmrs_exit_sleep(struct msm_rpmrs_limits *limits,
+	bool from_idle, bool notify_rpm, bool collapsed);
 /**
  * msm_lpmrs_module_init() - Init function that parses the device tree to
  * get the low power resource attributes and registers with RPM driver for
@@ -106,15 +107,14 @@ static inline bool msm_lpm_level_beyond_limit(struct msm_rpmrs_limits *limits)
 	return true;
 }
 
-static inline int msm_lpmrs_enter_sleep(struct msm_rpmrs_limits *limits,
-	bool from_idle, bool notify_rpm)
+static inline int msm_lpmrs_enter_sleep(uint32_t sclk_count,
+	struct msm_rpmrs_limits *limits, bool from_idle, bool notify_rpm)
 {
 	return 0;
 }
 
-static inline void msm_lpmrs_exit_sleep(uint32_t sclk_count,
-		struct msm_rpmrs_limits *limits, bool from_idle,
-		bool notify_rpm)
+static inline void msm_lpmrs_exit_sleep(struct msm_rpmrs_limits *limits,
+	bool from_idle, bool notify_rpm, bool collapsed)
 {
 	return;
 }

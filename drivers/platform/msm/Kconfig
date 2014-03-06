@@ -60,4 +60,26 @@ config QPNP_PWM
           devices support Pulse Width Modulation output with user generated
           patterns. They share a lookup table with size of 64 entries.
 
+config QPNP_POWER_ON
+	tristate "QPNP PMIC POWER-ON Driver"
+	depends on OF_SPMI && SPMI && MSM_QPNP_INT
+	help
+	  This driver supports the power-on functionality on Qualcomm
+	  PNP PMIC. It currently supports reporting the change in status of
+	  the KPDPWR_N line (connected to the power-key).
+
+config QPNP_CLKDIV
+	tristate "QPNP PMIC clkdiv driver"
+	depends on OF_SPMI && SPMI
+	help
+	  This driver supports the clkdiv functionality on the Qualcomm
+	  PNP PMIC. It configures the frequency of clkdiv outputs on the
+	  PMIC. These clocks are typically wired through alternate functions
+	  on gpio pins.
+config MSM_AVTIMER
+	tristate "Avtimer Driver"
+	depends on ARCH_MSM8960
+	help
+	  This driver gets the Q6 out of power collapsed state and
+          exposes ioctl control to read avtimer tick.
 endmenu

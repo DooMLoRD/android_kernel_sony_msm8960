@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -141,7 +141,7 @@ unsigned __msm_gpio_get_intr_status(unsigned gpio)
 
 void __msm_gpio_set_intr_status(unsigned gpio)
 {
-	__raw_writel(BIT(INTR_STATUS_BIT), GPIO_INTR_STATUS(gpio));
+	__raw_writel(0, GPIO_INTR_STATUS(gpio));
 }
 
 unsigned __msm_gpio_get_intr_config(unsigned gpio)
@@ -172,15 +172,12 @@ void __msm_gpio_set_intr_cfg_type(unsigned gpio, unsigned type)
 {
 	unsigned cfg;
 
-	cfg = __raw_readl(GPIO_INTR_CFG(gpio));
-
 	/* RAW_STATUS_EN is left on for all gpio irqs. Due to the
 	 * internal circuitry of TLMM, toggling the RAW_STATUS
 	 * could cause the INTR_STATUS to be set for EDGE interrupts.
 	 */
-	cfg |= (INTR_RAW_STATUS_EN | INTR_TARGET_PROC_APPS);
+	cfg = INTR_RAW_STATUS_EN | INTR_TARGET_PROC_APPS;
 	__raw_writel(cfg, GPIO_INTR_CFG(gpio));
-	cfg = __raw_readl(GPIO_INTR_CFG(gpio));
 	cfg &= ~INTR_DECT_CTL_MASK;
 	if (type == IRQ_TYPE_EDGE_RISING)
 		cfg |= INTR_DECT_CTL_POS_EDGE;
@@ -191,10 +188,10 @@ void __msm_gpio_set_intr_cfg_type(unsigned gpio, unsigned type)
 	else
 		cfg |= INTR_DECT_CTL_LEVEL;
 
-	if (type & (IRQ_TYPE_EDGE_RISING | IRQ_TYPE_LEVEL_HIGH))
-		cfg |= INTR_POL_CTL_HI;
-	else
+	if (type & IRQ_TYPE_LEVEL_LOW)
 		cfg &= ~INTR_POL_CTL_HI;
+	else
+		cfg |= INTR_POL_CTL_HI;
 
 	__raw_writel(cfg, GPIO_INTR_CFG(gpio));
 	/* Sometimes it might take a little while to update

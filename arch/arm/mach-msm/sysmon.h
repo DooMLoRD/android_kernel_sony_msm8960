@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,6 +31,7 @@ enum subsys_id {
 
 	/* Non-SMD subsystems */
 	SYSMON_SS_EXT_MODEM = SMD_NUM_TYPE,
+	SYSMON_SS_EXT_MODEM2,
 	SYSMON_NUM_SS
 };
 
@@ -38,6 +39,7 @@ enum subsys_id {
 int sysmon_send_event(enum subsys_id dest_ss, const char *event_ss,
 		      enum subsys_notif_type notif);
 int sysmon_get_reason(enum subsys_id dest_ss, char *buf, size_t len);
+int sysmon_send_shutdown(enum subsys_id dest_ss);
 #else
 static inline int sysmon_send_event(enum subsys_id dest_ss,
 				    const char *event_ss,
@@ -47,6 +49,10 @@ static inline int sysmon_send_event(enum subsys_id dest_ss,
 }
 static inline int sysmon_get_reason(enum subsys_id dest_ss, char *buf,
 				    size_t len)
+{
+	return 0;
+}
+static inline int sysmon_send_shutdown(enum subsys_id dest_ss)
 {
 	return 0;
 }

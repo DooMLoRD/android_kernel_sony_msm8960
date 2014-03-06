@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include <linux/io.h>
 #include <mach/msm-krait-l2-accessors.h>
 #include <mach/msm_iomap.h>
+#include <mach/socinfo.h>
 #include <asm/cputype.h>
 #include "acpuclock.h"
 
@@ -31,6 +32,8 @@
 #define CESR_ICTE		(BIT(6) | BIT(7))
 #define CESR_TLBMH		BIT(16)
 #define CESR_I_MASK		0x000000CC
+
+#define CESR_VALID_MASK		0x000100FF
 
 /* Print a message for everything but TLB MH events */
 #define CESR_PRINT_MASK		0x000000FF
@@ -62,6 +65,12 @@
 #define ERP_L1_ERR(a) panic(a)
 #else
 #define ERP_L1_ERR(a) do { } while (0)
+#endif
+
+#ifdef CONFIG_MSM_L1_RECOV_ERR_PANIC
+#define ERP_L1_RECOV_ERR(a) panic(a)
+#else
+#define ERP_L1_RECOV_ERR(a) do { } while (0)
 #endif
 
 #ifdef CONFIG_MSM_L2_ERP_PORT_PANIC
@@ -253,22 +262,11 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 	int print_regs = cesr & CESR_PRINT_MASK;
 	int log_event = cesr & CESR_LOG_EVENT_MASK;
 
-	void *const saw_bases[] = {
-		MSM_SAW0_BASE,
-		MSM_SAW1_BASE,
-		MSM_SAW2_BASE,
-		MSM_SAW3_BASE,
-	};
-
 	if (print_regs) {
 		pr_alert("L1 / TLB Error detected on CPU %d!\n", cpu);
 		pr_alert("\tCESR      = 0x%08x\n", cesr);
 		pr_alert("\tCPU speed = %lu\n", acpuclk_get_rate(cpu));
 		pr_alert("\tMIDR      = 0x%08x\n", read_cpuid_id());
-		pr_alert("\tPTE fuses = 0x%08x\n",
-					readl_relaxed(MSM_QFPROM_BASE + 0xC0));
-		pr_alert("\tPMIC_VREG = 0x%08x\n",
-					readl_relaxed(saw_bases[cpu] + 0x14));
 	}
 
 	if (cesr & CESR_DCTPE) {
@@ -330,8 +328,13 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 	/* Clear the interrupt bits we processed */
 	write_cesr(cesr);
 
-	if (print_regs)
-		ERP_L1_ERR("L1 cache error detected");
+	if (print_regs) {
+		if ((cesr & (~CESR_I_MASK & CESR_VALID_MASK)) ||
+		    cpu_is_krait_v1() || cpu_is_krait_v2())
+			ERP_L1_ERR("L1 nonrecoverable cache error detected");
+		else
+			ERP_L1_RECOV_ERR("L1 recoverable error detected\n");
+	}
 
 	return IRQ_HANDLED;
 }
@@ -550,12 +553,18 @@ static int msm_cache_erp_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static struct of_device_id cache_erp_match_table[] = {
+	{	.compatible = "qcom,cache_erp",	},
+	{}
+};
+
 static struct platform_driver msm_cache_erp_driver = {
 	.probe = msm_cache_erp_probe,
 	.remove = msm_cache_erp_remove,
 	.driver = {
 		.name = MODULE_NAME,
 		.owner = THIS_MODULE,
+		.of_match_table = cache_erp_match_table,
 	},
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include <mach/mpm.h>
 #include "lpm_resources.h"
 #include "pm.h"
+#include "rpm-notifier.h"
 
 static struct msm_rpmrs_level *msm_lpm_levels;
 static int msm_lpm_level_count;
@@ -40,17 +41,25 @@ int msm_lpm_enter_sleep(uint32_t sclk_count, void *limits,
 		bool from_idle, bool notify_rpm)
 {
 	int ret = 0;
+	struct msm_rpmrs_limits *l = (struct msm_rpmrs_limits *)limits;
 
-	ret = msm_lpmrs_enter_sleep((struct msm_rpmrs_limits *)limits,
-					from_idle, notify_rpm);
+	ret = msm_rpm_enter_sleep();
+	if (ret) {
+		pr_warn("%s(): RPM failed to enter sleep err:%d\n",
+				__func__, ret);
+		goto bail;
+	}
+	ret = msm_lpmrs_enter_sleep(sclk_count, l, from_idle, notify_rpm);
+bail:
 	return ret;
 }
 
 static void msm_lpm_exit_sleep(void *limits, bool from_idle,
 		bool notify_rpm, bool collapsed)
 {
-	/* TODO */
-	return;
+	msm_rpm_exit_sleep();
+	msm_lpmrs_exit_sleep((struct msm_rpmrs_limits *)limits,
+				from_idle, notify_rpm, collapsed);
 }
 
 void msm_lpm_show_resources(void)
@@ -83,8 +92,8 @@ s32 msm_cpuidle_get_deep_idle_latency(void)
 }
 
 static void *msm_lpm_lowest_limits(bool from_idle,
-		enum msm_pm_sleep_mode sleep_mode, uint32_t latency_us,
-		uint32_t sleep_us, uint32_t *power)
+		enum msm_pm_sleep_mode sleep_mode,
+		struct msm_pm_time_params *time_param, uint32_t *power)
 {
 	unsigned int cpu = smp_processor_id();
 	struct msm_rpmrs_level *best_level = NULL;
@@ -105,20 +114,22 @@ static void *msm_lpm_lowest_limits(bool from_idle,
 		if (sleep_mode != level->sleep_mode)
 			continue;
 
-		if (latency_us < level->latency_us)
+		if (time_param->latency_us < level->latency_us)
 			continue;
 
-		if (sleep_us <= 1) {
+		if (time_param->sleep_us <= 1) {
 			pwr = level->energy_overhead;
-		} else if (sleep_us <= level->time_overhead_us) {
-			pwr = level->energy_overhead / sleep_us;
-		} else if ((sleep_us >> 10) > level->time_overhead_us) {
+		} else if (time_param->sleep_us <= level->time_overhead_us) {
+			pwr = level->energy_overhead / time_param->sleep_us;
+		} else if ((time_param->sleep_us >> 10)
+				> level->time_overhead_us) {
 			pwr = level->steady_state_power;
 		} else {
 			pwr = level->steady_state_power;
 			pwr -= (level->time_overhead_us *
-					level->steady_state_power)/sleep_us;
-			pwr += level->energy_overhead / sleep_us;
+				level->steady_state_power) /
+						time_param->sleep_us;
+			pwr += level->energy_overhead / time_param->sleep_us;
 		}
 
 		if (!best_level || best_level->rs_limits.power[cpu] >= pwr) {

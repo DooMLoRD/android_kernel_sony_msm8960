@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  * Copyright (C) 2012 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,8 +26,8 @@
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/mfd/pm8xxx/regulator.h>
 #include <linux/leds-pm8xxx.h>
-#include <mach/simple_remote_msm8960_pf.h>
 #include <mach/pm8921-mic_bias.h>
+#include <mach/simple_remote_msm8960_pf.h>
 
 #define REG_HWREV		0x002  /* PMIC4 revision */
 #define REG_HWREV_2		0x0E8  /* PMIC4 revision 2 */
@@ -383,6 +383,11 @@ static struct mfd_cell vibrator_cell __devinitdata = {
 	.id             = -1,
 };
 
+static struct mfd_cell mic_bias_cell __devinitdata = {
+	.name           = PM8921_MIC_BIAS_NAME,
+	.id             = -1,
+};
+
 static const struct resource resources_simple_remote[] __devinitconst = {
 	SINGLE_IRQ_RESOURCE(NULL, PM8921_HSED_BTN_IRQ),
 };
@@ -392,11 +397,6 @@ static struct mfd_cell simple_remote_cell __devinitdata = {
 	.id = -1,
 	.num_resources = ARRAY_SIZE(resources_simple_remote),
 	.resources = resources_simple_remote,
-};
-
-static struct mfd_cell mic_bias_cell __devinitdata = {
-	.name           = PM8921_MIC_BIAS_NAME,
-	.id             = -1,
 };
 
 static struct pm8xxx_vreg regulator_data[] = {
@@ -823,6 +823,8 @@ pm8921_add_subdevices(const struct pm8921_platform_data *pdata,
 	}
 
 	if (pdata->ccadc_pdata) {
+		pdata->ccadc_pdata->ccadc_cdata.batt_temp_channel
+						= CHANNEL_BATT_THERM;
 		ccadc_cell.platform_data = pdata->ccadc_pdata;
 		ccadc_cell.pdata_size =
 				sizeof(struct pm8xxx_ccadc_platform_data);
@@ -831,6 +833,18 @@ pm8921_add_subdevices(const struct pm8921_platform_data *pdata,
 					irq_base);
 		if (ret) {
 			pr_err("Failed to add ccadc subdevice ret=%d\n", ret);
+			goto bail;
+		}
+	}
+
+	if (pdata->mic_bias_pdata) {
+		mic_bias_cell.platform_data = pdata->mic_bias_pdata;
+		mic_bias_cell.pdata_size =
+				sizeof(struct pm8921_mic_bias_platform_data);
+		ret = mfd_add_devices(pmic->dev, 0, &mic_bias_cell, 1, NULL, 0);
+		if (ret) {
+			pr_err("Failed to add mic bias subdevice ret=%d\n",
+									ret);
 			goto bail;
 		}
 	}
@@ -844,18 +858,6 @@ pm8921_add_subdevices(const struct pm8921_platform_data *pdata,
 		if (ret) {
 			pr_err("Failed to add simple remote subdevice"
 			       " ret=%d\n", ret);
-			goto bail;
-		}
-	}
-
-	if (pdata->mic_bias_pdata) {
-		mic_bias_cell.platform_data = pdata->mic_bias_pdata;
-		mic_bias_cell.pdata_size =
-				sizeof(struct pm8921_mic_bias_platform_data);
-		ret = mfd_add_devices(pmic->dev, 0, &mic_bias_cell, 1, NULL, 0);
-		if (ret) {
-			pr_err("Failed to add mic bias subdevice ret=%d\n",
-									ret);
 			goto bail;
 		}
 	}
@@ -889,61 +891,6 @@ static const char * const pm8917_rev_names[] = {
 	[PM8XXX_REVISION_8917_TEST]	= "test",
 	[PM8XXX_REVISION_8917_1p0]	= "1.0",
 };
-
-/*
- * pm8921_v3_post_probe() reads registers 0x0001 and 0x0339
- * from a workqueue with 10sec delay after pm8921_probe()
- */
-static struct workqueue_struct *pm8921_v3_post_probe_wq;
-
-struct pm8921_v3_post_work_s {
-	struct delayed_work delayed_work;
-	struct pm8921 *pmic;
-};
-
-static void pm8921_v3_post_probe(struct work_struct *w)
-{
-	int rc;
-	u8 reg_value;
-	struct pm8921_v3_post_work_s *pm8921_work = container_of(
-		w,
-		struct pm8921_v3_post_work_s,
-		delayed_work.work);
-
-	rc = pm8xxx_readb(pm8921_work->pmic->dev, 0x0001, &reg_value);
-	if (rc) {
-		pr_info("PMIC register 0x0001: failed to read\n");
-	} else {
-		char *version_str = reg_value & 0x01 ? "v3.0.1" : "v3.0";
-		pr_info("PMIC register 0x0001: rev %s, raw=0x%02X\n",
-			version_str,
-			(unsigned int)reg_value);
-	}
-	rc = pm8xxx_readb(pm8921_work->pmic->dev, 0x0339, &reg_value);
-	if (rc) {
-		pr_info("PMIC register 0x0339: failed to read\n");
-	} else {
-		char *fab = "unknown";
-		switch (reg_value >> 4) { /* bit[7:4] */
-		case 2:
-			fab = "GF";
-			break;
-		case 3:
-			fab = "GF?";
-			break;
-		case 4:
-			fab = "SMIC";
-			break;
-		case 5:
-			fab = "SMIC?";
-			break;
-		}
-		pr_info("PMIC register 0x0339: fab %s, raw=0x%02X\n",
-			fab,
-			(unsigned int)reg_value);
-	}
-	kfree(pm8921_work);
-}
 
 static int __devinit pm8921_probe(struct platform_device *pdev)
 {
@@ -996,23 +943,6 @@ static int __devinit pm8921_probe(struct platform_device *pdev)
 		if (revision >= 0 && revision < ARRAY_SIZE(pm8921_rev_names))
 			revision_name = pm8921_rev_names[revision];
 		pr_info("PMIC version: PM8921 rev %s\n", revision_name);
-
-		if (revision == PM8XXX_REVISION_8921_3p0
-			&& pm8921_v3_post_probe_wq) {
-			struct pm8921_v3_post_work_s *pm8921_work = kmalloc(
-					sizeof(struct pm8921_v3_post_work_s),
-					GFP_KERNEL);
-			if (pm8921_work) {
-				INIT_DELAYED_WORK(
-					&pm8921_work->delayed_work,
-					pm8921_v3_post_probe);
-				pm8921_work->pmic = pmic;
-				queue_delayed_work(
-					pm8921_v3_post_probe_wq,
-					&pm8921_work->delayed_work,
-					msecs_to_jiffies(10000));
-			}
-		}
 	} else if (version == PM8XXX_VERSION_8922) {
 		if (revision >= 0 && revision < ARRAY_SIZE(pm8922_rev_names))
 			revision_name = pm8922_rev_names[revision];
@@ -1099,21 +1029,12 @@ static struct platform_driver pm8921_driver = {
 
 static int __init pm8921_init(void)
 {
-	int result = platform_driver_register(&pm8921_driver);
-	if (!pm8921_v3_post_probe_wq)
-		pm8921_v3_post_probe_wq =
-			create_workqueue("pm8921_v3_post_probe");
-	return result;
+	return platform_driver_register(&pm8921_driver);
 }
 postcore_initcall(pm8921_init);
 
 static void __exit pm8921_exit(void)
 {
-	if (pm8921_v3_post_probe_wq) {
-		flush_workqueue(pm8921_v3_post_probe_wq);
-		destroy_workqueue(pm8921_v3_post_probe_wq);
-		pm8921_v3_post_probe_wq = NULL;
-	}
 	platform_driver_unregister(&pm8921_driver);
 }
 module_exit(pm8921_exit);

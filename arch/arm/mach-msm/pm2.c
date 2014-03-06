@@ -3,7 +3,7 @@
  * MSM Power Management Routines
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2012 Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2012 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -1295,7 +1295,7 @@ static int msm_pm_swfi(bool ramp_acpu)
 
 static int64_t msm_pm_timer_enter_suspend(int64_t *period)
 {
-	int time = 0;
+	int64_t time = 0;
 
 	time = msm_timer_get_sclk_time(period);
 	if (!time)

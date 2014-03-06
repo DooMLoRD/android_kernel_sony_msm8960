@@ -136,10 +136,12 @@ void crash_notes_save_this_cpu(enum crash_note_save_type type,
 	if (type == CRASH_NOTE_CRASHING ||
 		type == CRASH_NOTE_STOPPING) {
 		char tmp_buf[24];
+
 		snprintf(tmp_buf, sizeof(tmp_buf),
 			"%s_proc_name_cpu%u",
 			type == CRASH_NOTE_CRASHING ? "crash" : "halted",
 			cpu);
+
 		rdtags_add_tag_string(
 				tmp_buf,
 				process_name);

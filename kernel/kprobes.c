@@ -117,7 +117,7 @@ static void init_kprobe_blacklist(void)
 	void *addr;
 	struct kprobe_blackpoint *kb;
 
-	printk(KERN_INFO "Initialising kprobe blocklist");
+	printk(KERN_INFO "Initialising kprobe blacklist");
 	/*
 	 * Lookup and populate the kprobe_blacklist.
 	 *

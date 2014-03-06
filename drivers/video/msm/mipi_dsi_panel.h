@@ -99,6 +99,7 @@ struct panel_id {
 	const char			*id;
 	const int			id_num;
 	const struct mipi_dsi_lane_cfg	*plncfg;
+	const bool			esd_failed_check;
 };
 
 struct mipi_dsi_data {
@@ -126,11 +127,15 @@ struct mipi_dsi_data {
 					const char *buf, int count);
 	ssize_t	(*get_nvm_backup)(struct mipi_dsi_data *dsi_data, char *buf);
 	bool	(*is_nvm_ok)(struct msm_fb_data_type *mfd);
-	void 	(*backup_nvm_to_ram)(struct msm_fb_data_type *mfd);
+	void	(*backup_nvm_to_ram)(struct msm_fb_data_type *mfd);
 	int	(*nvm_erase_all)(struct msm_fb_data_type *mfd);
 	int	(*nvm_write_trim_area)(struct msm_fb_data_type *mfd);
 	int	(*nvm_write_user_area)(struct msm_fb_data_type *mfd);
 #endif
+	struct workqueue_struct *esd_wq;
+	struct delayed_work esd_work;
+	void (*esd_check)(struct mipi_dsi_data *dsi_data);
+	bool esd_check_enable;
 };
 
 void mipi_dsi_set_default_panel(struct mipi_dsi_data *dsi_data);

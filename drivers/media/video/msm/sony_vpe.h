@@ -165,6 +165,12 @@ struct vpe_ctrl_type {
 	struct cdev			cdev;
 	wait_queue_head_t		wait;
 	struct list_head		pmem_buf;
+
+	/*IOMMU domain for this session*/
+	int				domain_num;
+	struct iommu_domain		*domain;
+	struct device			*iommu_ctx_src;
+	struct device			*iommu_ctx_dst;
 };
 
 /*

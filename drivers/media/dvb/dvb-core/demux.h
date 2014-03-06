@@ -7,7 +7,7 @@
  * Copyright (c) 2000 Nokia Research Center
  *                    Tampere, FINLAND
  *
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License
@@ -63,14 +63,88 @@
  */
 
 enum dmx_success {
-  DMX_OK = 0, /* Received Ok */
-  DMX_LENGTH_ERROR, /* Incorrect length */
-  DMX_OVERRUN_ERROR, /* Receiver ring buffer overrun */
-  DMX_CRC_ERROR, /* Incorrect CRC */
-  DMX_FRAME_ERROR, /* Frame alignment error */
-  DMX_FIFO_ERROR, /* Receiver FIFO overrun */
-  DMX_MISSED_ERROR /* Receiver missed packet */
+	DMX_OK = 0, /* Received Ok */
+	DMX_OK_PES_END, /* Received OK, data reached end of PES packet */
+	DMX_OK_PCR, /* Received OK, data with new PCR/STC pair */
+	DMX_LENGTH_ERROR, /* Incorrect length */
+	DMX_OVERRUN_ERROR, /* Receiver ring buffer overrun */
+	DMX_CRC_ERROR, /* Incorrect CRC */
+	DMX_FRAME_ERROR, /* Frame alignment error */
+	DMX_FIFO_ERROR, /* Receiver FIFO overrun */
+	DMX_MISSED_ERROR, /* Receiver missed packet */
+	DMX_OK_DECODER_BUF /* Received OK, new ES data in decoder buffer */
 } ;
+
+
+/*
+ * struct dmx_data_ready: Parameters for event notification callback.
+ * Event notification notifies demux device that data is written
+ * and available in the device's output buffer or provides
+ * notification on errors and other events. In the latter case
+ * data_length is zero.
+ */
+struct dmx_data_ready {
+	enum dmx_success status;
+
+	/*
+	 * data_length may be 0 in case of DMX_OK_PES_END
+	 * and in non-DMX_OK_XXX events. In DMX_OK_PES_END,
+	 * data_length is for data comming after the end of PES.
+	 */
+	int data_length;
+
+	union {
+		struct {
+			int start_gap;
+			int actual_length;
+			int disc_indicator_set;
+			int pes_length_mismatch;
+			u64 stc;
+			u32 tei_counter;
+			u32 cont_err_counter;
+			u32 ts_packets_num;
+		} pes_end;
+
+		struct {
+			u64 pcr;
+			u64 stc;
+			int disc_indicator_set;
+		} pcr;
+
+		struct {
+			int handle;
+			int cookie;
+			u32 offset;
+			u32 len;
+			int pts_exists;
+			u64 pts;
+			int dts_exists;
+			u64 dts;
+			u32 tei_counter;
+			u32 cont_err_counter;
+			u32 ts_packets_num;
+			u32 ts_dropped_bytes;
+		} buf;
+	};
+};
+
+/*
+ * struct data_buffer: Parameters of buffer allocated by
+ * demux device for input/output. Can be used to directly map the
+ * demux-device buffer to HW output if HW supports it.
+ */
+struct data_buffer {
+	/* dvb_ringbuffer managed by demux-device */
+	const struct dvb_ringbuffer *ringbuff;
+
+
+	/*
+	 * Private handle returned by kernel demux when
+	 * map_buffer is called in case external buffer
+	 * is used. NULL if buffer is allocated internally.
+	 */
+	void *priv_handle;
+};
 
 /*--------------------------------------------------------------------------*/
 /* TS packet reception */
@@ -123,11 +197,17 @@ enum dmx_ts_pes
 #define DMX_TS_PES_SUBTITLE DMX_TS_PES_SUBTITLE0
 #define DMX_TS_PES_PCR      DMX_TS_PES_PCR0
 
+struct dmx_ts_feed;
+typedef int (*dmx_ts_data_ready_cb)(
+		struct dmx_ts_feed *source,
+		struct dmx_data_ready *dmx_data_ready);
 
 struct dmx_ts_feed {
 	int is_filtering; /* Set to non-zero when filtering in progress */
 	struct dmx_demux *parent; /* Back-pointer */
+	struct data_buffer buffer;
 	void *priv; /* Pointer to private data of the API client */
+	struct dmx_decoder_buffers *decoder_buffers;
 	int (*set) (struct dmx_ts_feed *feed,
 		    u16 pid,
 		    int type,
@@ -141,6 +221,17 @@ struct dmx_ts_feed {
 	int (*get_decoder_buff_status)(
 			struct dmx_ts_feed *feed,
 			struct dmx_buffer_status *dmx_buffer_status);
+	int (*reuse_decoder_buffer)(
+			struct dmx_ts_feed *feed,
+			int cookie);
+	int (*data_ready_cb)(struct dmx_ts_feed *feed,
+			dmx_ts_data_ready_cb callback);
+	int (*notify_data_read)(struct dmx_ts_feed *feed,
+			u32 bytes_num);
+	int (*set_tsp_out_format)(struct dmx_ts_feed *feed,
+				enum dmx_tsp_format_t tsp_format);
+	int (*set_secure_mode)(struct dmx_ts_feed *feed,
+				struct dmx_secure_mode *sec_mode);
 };
 
 /*--------------------------------------------------------------------------*/
@@ -152,8 +243,14 @@ struct dmx_section_filter {
 	u8 filter_mask [DMX_MAX_FILTER_SIZE];
 	u8 filter_mode [DMX_MAX_FILTER_SIZE];
 	struct dmx_section_feed* parent; /* Back-pointer */
+	struct data_buffer buffer;
 	void* priv; /* Pointer to private data of the API client */
 };
+
+struct dmx_section_feed;
+typedef int (*dmx_section_data_ready_cb)(
+		struct dmx_section_filter *source,
+		struct dmx_data_ready *dmx_data_ready);
 
 struct dmx_section_feed {
 	int is_filtering; /* Set to non-zero when filtering in progress */
@@ -177,6 +274,12 @@ struct dmx_section_feed {
 			       struct dmx_section_filter* filter);
 	int (*start_filtering) (struct dmx_section_feed* feed);
 	int (*stop_filtering) (struct dmx_section_feed* feed);
+	int (*data_ready_cb)(struct dmx_section_feed *feed,
+			dmx_section_data_ready_cb callback);
+	int (*notify_data_read)(struct dmx_section_filter *filter,
+			u32 bytes_num);
+	int (*set_secure_mode)(struct dmx_section_feed *feed,
+				struct dmx_secure_mode *sec_mode);
 };
 
 /*--------------------------------------------------------------------------*/
@@ -260,6 +363,9 @@ struct dmx_demux {
 	u32 capabilities;            /* Bitfield of capability flags */
 	struct dmx_frontend* frontend;    /* Front-end connected to the demux */
 	void* priv;                  /* Pointer to private data of the API client */
+	struct data_buffer dvr_input; /* DVR input buffer */
+	struct dentry *debugfs_demux_dir; /* debugfs dir */
+
 	int (*open) (struct dmx_demux* demux);
 	int (*close) (struct dmx_demux* demux);
 	int (*write) (struct dmx_demux *demux, const char *buf, size_t count);
@@ -291,9 +397,6 @@ struct dmx_demux {
 	int (*set_tsp_format) (struct dmx_demux *demux,
 				enum dmx_tsp_format_t tsp_format);
 
-	int (*set_tsp_out_format) (struct dmx_demux *demux,
-				enum dmx_tsp_format_t tsp_format);
-
 	int (*set_playback_mode) (struct dmx_demux *demux,
 				 enum dmx_playback_mode_t mode,
 				 dmx_ts_fullness ts_fullness_callback,
@@ -303,6 +406,13 @@ struct dmx_demux {
 
 	int (*get_stc) (struct dmx_demux* demux, unsigned int num,
 			u64 *stc, unsigned int *base);
+
+	int (*map_buffer) (struct dmx_demux *demux,
+			struct dmx_buffer *dmx_buffer,
+			void **priv_handle, void **mem);
+
+	int (*unmap_buffer) (struct dmx_demux *demux,
+			void *priv_handle);
 };
 
 #endif /* #ifndef __DEMUX_H */

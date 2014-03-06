@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,6 +32,8 @@ static struct workqueue_struct *grmnet_ctrl_wq;
 #define SMD_CH_MAX_LEN	20
 #define CH_OPENED	0
 #define CH_READY	1
+#define CH_PREPARE_READY 2
+
 struct smd_ch_info {
 	struct smd_channel	*ch;
 	char			*name;
@@ -60,6 +62,7 @@ struct rmnet_ctrl_port {
 
 	spinlock_t		port_lock;
 	struct delayed_work	connect_w;
+	struct delayed_work	disconnect_w;
 };
 
 static struct rmnet_ctrl_ports {
@@ -324,14 +327,22 @@ static void grmnet_ctrl_smd_connect_w(struct work_struct *w)
 {
 	struct rmnet_ctrl_port *port =
 			container_of(w, struct rmnet_ctrl_port, connect_w.work);
+	struct rmnet_ctrl_ports *port_entry = &ctrl_smd_ports[port->port_num];
 	struct smd_ch_info *c = &port->ctrl_ch;
 	unsigned long flags;
+	int	set_bits = 0;
+	int	clear_bits = 0;
 	int ret;
 
 	pr_debug("%s:\n", __func__);
 
-	if (!test_bit(CH_READY, &c->flags))
+	if (!test_bit(CH_READY, &c->flags)) {
+		if (!test_bit(CH_PREPARE_READY, &c->flags)) {
+			set_bit(CH_PREPARE_READY, &c->flags);
+			platform_driver_register(&(port_entry->pdrv));
+		}
 		return;
+	}
 
 	ret = smd_open(c->name, &c->ch, port, grmnet_ctrl_smd_notify);
 	if (ret) {
@@ -348,9 +359,11 @@ static void grmnet_ctrl_smd_connect_w(struct work_struct *w)
 		return;
 	}
 
+	set_bits = c->cbits_tomodem;
+	clear_bits = ~(c->cbits_tomodem | TIOCM_RTS);
 	spin_lock_irqsave(&port->port_lock, flags);
 	if (port->port_usb)
-		smd_tiocmset(c->ch, c->cbits_tomodem, ~c->cbits_tomodem);
+		smd_tiocmset(c->ch, set_bits, clear_bits);
 	spin_unlock_irqrestore(&port->port_lock, flags);
 }
 
@@ -384,6 +397,28 @@ int gsmd_ctrl_connect(struct grmnet *gr, int port_num)
 	queue_delayed_work(grmnet_ctrl_wq, &port->connect_w, 0);
 
 	return 0;
+}
+
+static void grmnet_ctrl_smd_disconnect_w(struct work_struct *w)
+{
+	struct rmnet_ctrl_port *port =
+			container_of(w, struct rmnet_ctrl_port,
+					disconnect_w.work);
+	struct smd_ch_info *c;
+	struct platform_driver *pdrv;
+
+	c = &port->ctrl_ch;
+	if (c->ch) {
+		smd_close(c->ch);
+		c->ch = NULL;
+	}
+
+	if (test_bit(CH_READY, &c->flags) ||
+	    test_bit(CH_PREPARE_READY, &c->flags)) {
+		clear_bit(CH_PREPARE_READY, &c->flags);
+		pdrv = &ctrl_smd_ports[port->port_num].pdrv;
+		platform_driver_unregister(pdrv);
+	}
 }
 
 void gsmd_ctrl_disconnect(struct grmnet *gr, u8 port_num)
@@ -427,10 +462,7 @@ void gsmd_ctrl_disconnect(struct grmnet *gr, u8 port_num)
 		/* send dtr zero */
 		smd_tiocmset(c->ch, c->cbits_tomodem, ~c->cbits_tomodem);
 
-	if (c->ch) {
-		smd_close(c->ch);
-		c->ch = NULL;
-	}
+	queue_delayed_work(grmnet_ctrl_wq, &port->disconnect_w, 0);
 }
 
 #define SMD_CH_MAX_LEN	20
@@ -448,6 +480,7 @@ static int grmnet_ctrl_smd_ch_probe(struct platform_device *pdev)
 		c = &port->ctrl_ch;
 
 		if (!strncmp(c->name, pdev->name, SMD_CH_MAX_LEN)) {
+			clear_bit(CH_PREPARE_READY, &c->flags);
 			set_bit(CH_READY, &c->flags);
 
 			/* if usb is online, try opening smd_ch */
@@ -516,6 +549,7 @@ static int grmnet_ctrl_smd_port_alloc(int portno)
 
 	spin_lock_init(&port->port_lock);
 	INIT_DELAYED_WORK(&port->connect_w, grmnet_ctrl_smd_connect_w);
+	INIT_DELAYED_WORK(&port->disconnect_w, grmnet_ctrl_smd_disconnect_w);
 
 	c = &port->ctrl_ch;
 	c->name = rmnet_ctrl_names[portno];
@@ -532,8 +566,6 @@ static int grmnet_ctrl_smd_port_alloc(int portno)
 	pdrv->remove = grmnet_ctrl_smd_ch_remove;
 	pdrv->driver.name = c->name;
 	pdrv->driver.owner = THIS_MODULE;
-
-	platform_driver_register(pdrv);
 
 	pr_debug("%s: port:%p portno:%d\n", __func__, port, portno);
 

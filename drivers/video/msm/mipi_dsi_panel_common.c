@@ -31,10 +31,12 @@ void mipi_dsi_set_default_panel(struct mipi_dsi_data *dsi_data)
 		dsi_data->panel->width;
 	dsi_data->panel_data.panel_info.height =
 		dsi_data->panel->height;
+	esc_byte_ratio =
+			dsi_data->panel_data.panel_info.mipi.esc_byte_ratio;
 }
 
 static int panel_id_reg_check(struct msm_fb_data_type *mfd, struct dsi_buf *ptx,
-			      struct dsi_buf *prx, const struct panel_id* panel)
+			      struct dsi_buf *prx, const struct panel_id *panel)
 {
 	int i;
 

@@ -195,6 +195,7 @@ enum ldo_users {
 	LDO_FOR_ALS   = 1 << 0,
 	LDO_FOR_DLS   = 1 << 1,
 	LDO_FOR_AUDIO = 1 << 2,
+	LDO_FOR_LDO   = 1 << 3,
 };
 
 struct as3676_data {
@@ -2098,6 +2099,32 @@ static void as3676_switch_als(struct as3676_data *data, int als_on)
 		udelay(10);
 	}
 }
+
+static ssize_t as3676_ldo_on_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct as3676_data *data = dev_get_drvdata(dev);
+	int als_on, i;
+	i = sscanf(buf, "%1d", &als_on);
+	if (i != 1)
+		return -EINVAL;
+	if (als_on != 1 && als_on != 0)
+		return -EINVAL;
+	AS3676_LOCK();
+	handle_ldo(data, LDO_FOR_LDO, als_on);
+	AS3676_UNLOCK();
+	return strnlen(buf, PAGE_SIZE);
+}
+
+static ssize_t as3676_ldo_on_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct as3676_data *data = dev_get_drvdata(dev);
+	snprintf(buf, PAGE_SIZE, "0x%02x\n", data->ldo_count);
+	return strnlen(buf, PAGE_SIZE);
+}
+
 static ssize_t as3676_als_on_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t size)
@@ -2126,7 +2153,8 @@ static ssize_t as3676_als_result_show(struct device *dev,
 	struct as3676_data *data = dev_get_drvdata(dev);
 	int i;
 	s32 als_result, amb_gain, offset;
-	u32 adc_result;
+	s32 adc_result;
+	u8 adc[2];
 	s32 hw_result = i2c_smbus_read_byte_data(data->client,
 			AS3676_REG_ALS_result);
 
@@ -2134,16 +2162,23 @@ static ssize_t as3676_als_result_show(struct device *dev,
 	AS3676_LOCK();
 	AS3676_WRITE_REG(AS3676_REG_ADC_control, 0x80);
 	for (i = 0; i < 10; i++) {
-		adc_result = i2c_smbus_read_byte_data(data->client,
-				AS3676_REG_ADC_MSB_result);
-		if (!(adc_result & 0x80))
+		adc_result = i2c_smbus_read_i2c_block_data(data->client,
+			AS3676_REG_ADC_MSB_result, sizeof(adc), adc);
+		if (!(adc[0] & 0x80) && adc_result == sizeof(adc))
 			break;
 		udelay(10);
 	}
-	adc_result <<= 3;
-	adc_result |= i2c_smbus_read_byte_data(data->client,
-			AS3676_REG_ADC_LSB_result);
-
+	if (i < 10) {
+		adc_result = (adc[0] << 3) | adc[1];
+	} else {
+		if (adc_result == sizeof(adc))
+			adc_result  = -EAGAIN;
+		else if (adc_result > 0)
+			adc_result = -ENXIO;
+		dev_err(dev, "%s: IO err %d", __func__, adc_result);
+		AS3676_UNLOCK();
+		return adc_result;
+	}
 	amb_gain = (AS3676_READ_REG(AS3676_REG_ALS_control) & 0x06) >> 1;
 	amb_gain = 1 << amb_gain; /* Have gain ready for calculations */
 	offset = AS3676_READ_REG(AS3676_REG_ALS_offset);
@@ -2431,6 +2466,7 @@ static struct device_attribute as3676_attributes[] = {
 	AS3676_ATTR(als_on),
 	AS3676_ATTR(audio_on),
 	AS3676_ATTR(audio_color),
+	AS3676_ATTR(ldo_on),
 	__ATTR_NULL
 };
 

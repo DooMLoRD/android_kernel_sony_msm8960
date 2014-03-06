@@ -2,7 +2,7 @@
  *  linux/drivers/mmc/host/msmsdcc.h - QCT MSM7K SDC Controller
  *
  *  Copyright (C) 2008 Google, All Rights Reserved.
- *  Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ *  Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -216,8 +216,8 @@
 #define MSM_MMC_DEFAULT_IDLE_TIMEOUT	5000 /* msecs */
 #define MSM_MMC_CLK_GATE_DELAY	200 /* msecs */
 
-/* Set the request timeout to 10secs */
-#define MSM_MMC_REQ_TIMEOUT	10000 /* msecs */
+/* Set the request timeout to 30 secs */
+#define MSM_MMC_REQ_TIMEOUT	30000 /* msecs */
 
 /*
  * Controller HW limitations
@@ -252,6 +252,12 @@
 #define MMC_MAX_DMA_BOX_LENGTH (MMC_MAX_DMA_ROWS * MCI_FIFOSIZE)
 #define MMC_MAX_DMA_CMDS (MAX_NR_SG_DMA_PIO * (MMC_MAX_REQ_SIZE / \
 		MMC_MAX_DMA_BOX_LENGTH))
+
+/*
+ * Peripheral bus clock scaling vote rates
+ */
+#define MSMSDCC_BUS_VOTE_MAX_RATE	64000000 /* Hz */
+#define MSMSDCC_BUS_VOTE_MIN_RATE	32000000 /* Hz */
 
 struct clk;
 
@@ -320,7 +326,7 @@ struct msmsdcc_sps_data {
 	unsigned int			dest_pipe_index;
 	unsigned int			busy;
 	unsigned int			xfer_req_cnt;
-	bool				pipe_reset_pending;
+	bool				reset_bam;
 	struct tasklet_struct		tlet;
 };
 
@@ -353,6 +359,7 @@ struct msmsdcc_host {
 	struct clk		*clk;		/* main MMC bus clock */
 	struct clk		*pclk;		/* SDCC peripheral bus clock */
 	struct clk		*bus_clk;	/* SDCC bus voter clock */
+	unsigned long		bus_clk_rate;	/* peripheral bus clk rate */
 	atomic_t		clks_on;	/* set if clocks are enabled */
 
 	unsigned int		eject;		/* eject state */
@@ -361,7 +368,6 @@ struct msmsdcc_host {
 
 	unsigned int		clk_rate;	/* Current clock rate */
 	unsigned int		pclk_rate;
-	unsigned int		ddr_doubled_clk_rate;
 
 	u32			pwr;
 	struct mmc_platform_data *plat;
@@ -400,7 +406,7 @@ struct msmsdcc_host {
 	bool io_pad_pwr_switch;
 	bool tuning_in_progress;
 	bool tuning_needed;
-	bool en_auto_cmd19;
+	bool tuning_done;
 	bool sdio_gpio_lpm;
 	bool irq_wake_enabled;
 	struct pm_qos_request pm_qos_req_dma;
@@ -416,10 +422,12 @@ struct msmsdcc_host {
 	struct device_attribute	max_bus_bw;
 	struct device_attribute	polling;
 	struct device_attribute idle_timeout;
-	struct device_attribute auto_cmd19_attr;
+	int saved_tuning_phase;
 };
 
-#define MSMSDCC_VERSION_MASK	0xFFFF
+#define MSMSDCC_VERSION_STEP_MASK	0x0000FFFF
+#define MSMSDCC_VERSION_MINOR_MASK	0x0FFF0000
+#define MSMSDCC_VERSION_MINOR_SHIFT	16
 #define MSMSDCC_DMA_SUP	(1 << 0)
 #define MSMSDCC_SPS_BAM_SUP	(1 << 1)
 #define MSMSDCC_SOFT_RESET	(1 << 2)
@@ -429,7 +437,6 @@ struct msmsdcc_host {
 #define MSMSDCC_SW_RST_CFG	(1 << 6)
 #define MSMSDCC_WAIT_FOR_TX_RX	(1 << 7)
 #define MSMSDCC_IO_PAD_PWR_SWITCH	(1 << 8)
-#define MSMSDCC_AUTO_CMD19	(1 << 9)
 
 #define set_hw_caps(h, val)		((h)->hw_caps |= val)
 #define is_sps_mode(h)			((h)->hw_caps & MSMSDCC_SPS_BAM_SUP)
@@ -441,12 +448,13 @@ struct msmsdcc_host {
 #define is_sw_reset_save_config(h)	((h)->hw_caps & MSMSDCC_SW_RST_CFG)
 #define is_wait_for_tx_rx_active(h)	((h)->hw_caps & MSMSDCC_WAIT_FOR_TX_RX)
 #define is_io_pad_pwr_switch(h)	((h)->hw_caps & MSMSDCC_IO_PAD_PWR_SWITCH)
-#define is_auto_cmd19(h)		((h)->hw_caps & MSMSDCC_AUTO_CMD19)
 
 /* Set controller capabilities based on version */
 static inline void set_default_hw_caps(struct msmsdcc_host *host)
 {
 	u32 version;
+	u16 step, minor;
+
 	/*
 	 * Lookup the Controller Version, to identify the supported features
 	 * Version number read as 0 would indicate SDCC3 or earlier versions.
@@ -457,14 +465,20 @@ static inline void set_default_hw_caps(struct msmsdcc_host *host)
 	if (!version)
 		return;
 
-	version &= MSMSDCC_VERSION_MASK;
+	step = version & MSMSDCC_VERSION_STEP_MASK;
+	minor = (version & MSMSDCC_VERSION_MINOR_MASK) >>
+		MSMSDCC_VERSION_MINOR_SHIFT;
+
 	if (version) /* SDCC v4 and greater */
 		host->hw_caps |= MSMSDCC_AUTO_PROG_DONE |
 			MSMSDCC_SOFT_RESET | MSMSDCC_REG_WR_ACTIVE
-			| MSMSDCC_WAIT_FOR_TX_RX | MSMSDCC_IO_PAD_PWR_SWITCH
-			| MSMSDCC_AUTO_CMD19;
+			| MSMSDCC_WAIT_FOR_TX_RX | MSMSDCC_IO_PAD_PWR_SWITCH;
 
-	if (version >= 0x2D) /* SDCC v4 2.1.0 and greater */
+	if ((step == 0x18) && (minor >= 3))
+		/* Version 0x06000018 need hard reset on errors */
+		host->hw_caps &= ~MSMSDCC_SOFT_RESET;
+
+	if (step >= 0x2b) /* SDCC v4 2.1.0 and greater */
 		host->hw_caps |= MSMSDCC_SW_RST | MSMSDCC_SW_RST_CFG;
 }
 

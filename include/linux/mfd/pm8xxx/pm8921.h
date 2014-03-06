@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  * Copyright (C) 2012 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -145,8 +145,8 @@ struct pm8921_platform_data {
 	struct pm8xxx_vibrator_platform_data	*vibrator_pdata;
 	struct pm8xxx_ccadc_platform_data	*ccadc_pdata;
 	struct pm8xxx_pwm_platform_data		*pwm_pdata;
-	struct simple_remote_platform_data	*simple_remote_pdata;
 	struct pm8921_mic_bias_platform_data	*mic_bias_pdata;
+	struct simple_remote_platform_data	*simple_remote_pdata;
 };
 
 #endif

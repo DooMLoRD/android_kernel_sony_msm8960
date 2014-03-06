@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,6 +21,32 @@
 		reg = <0x0>;
 		#address-cells = <1>;
 		#size-cells = <1>;
+
+		qcom,power-on@800 {
+			compatible = "qcom,qpnp-power-on";
+			reg = <0x800 0x100>;
+			interrupts = <0x0 0x8 0x0>,
+				     <0x0 0x8 0x1>,
+				     <0x0 0x8 0x4>;
+			interrupt-names = "kpdpwr", "resin", "resin-bark";
+			qcom,pon-dbc-delay = <15625>;
+
+			qcom,pon_1 {
+				qcom,pon-type = <0>;
+				qcom,pull-up = <1>;
+				linux,code = <116>;
+			};
+
+			qcom,pon_2 {
+				qcom,pon-type = <1>;
+				qcom,support-reset = <1>;
+				qcom,pull-up = <1>;
+				qcom,s1-timer = <0>;
+				qcom,s2-timer = <2000>;
+				qcom,s2-type = <1>;
+				linux,code = <114>;
+			};
+		};
 
 		pm8941_gpios {
 			spmi-dev-container;
@@ -305,6 +331,205 @@
 				status = "disabled";
 			};
 		};
+
+		qcom,pm8941_rtc {
+			spmi-dev-container;
+			compatible = "qcom,qpnp-rtc";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			qcom,qpnp-rtc-write = <0>;
+			qcom,qpnp-rtc-alarm-pwrup = <0>;
+
+			qcom,pm8941_rtc_rw@6000 {
+				reg = <0x6000 0x100>;
+			};
+			qcom,pm8941_rtc_alarm@6100 {
+				reg = <0x6100 0x100>;
+				interrupts = <0x0 0x61 0x1>;
+			};
+		};
+
+		vadc@3100 {
+			compatible = "qcom,qpnp-vadc";
+			reg = <0x3100 0x100>;
+			interrupts = <0x0 0x31 0x0>;
+			qcom,adc-bit-resolution = <15>;
+			qcom,adc-vdd-reference = <1800>;
+
+			chan@0 {
+				label = "usb_in";
+				qcom,channel-num = <0>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <4>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@1 {
+				label = "dc_in";
+				qcom,channel-num = <1>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <4>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@2 {
+				label = "vchg_sns";
+				qcom,channel-num = <2>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <3>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@3 {
+				label = "spare1";
+				qcom,channel-num = <3>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <6>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@4 {
+				label = "spare2";
+				qcom,channel-num = <4>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <6>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@5 {
+				label = "vcoin";
+				qcom,channel-num = <5>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <1>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@6 {
+				label = "vbat_sns";
+				qcom,channel-num = <6>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <1>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@7 {
+				label = "vph_pwr";
+				qcom,channel-num = <7>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <1>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@8 {
+				label = "die_temp";
+				qcom,channel-num = <8>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <3>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@9 {
+				label = "ref_625mv";
+				qcom,channel-num = <9>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@10 {
+				label = "ref_1250v";
+				qcom,channel-num = <10>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@48 {
+				label = "batt_therm";
+				qcom,channel-num = <48>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <1>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@49 {
+				label = "batt_id";
+				qcom,channel-num = <49>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+
+			chan@50 {
+				label = "xo_therm1";
+				qcom,channel-num = <49>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <4>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+		};
+
+		iadc@3600 {
+			compatible = "qcom,qpnp-iadc";
+			reg = <0x3600 0x100>;
+			interrupts = <0x0 0x36 0x0>;
+			qcom,adc-bit-resolution = <16>;
+			qcom,adc-vdd-reference = <1800>;
+			qcom,rsense = <1500>;
+
+			chan@0 {
+				label = "internal_rsense";
+				qcom,channel-num = <0>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <1>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+		};
 	};
 
 	qcom,pm8941@1 {
@@ -359,7 +584,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			compatible = "qcom,qpnp-regulator";
-			reg = <0x1400 0x300>;
+			reg = <0x1a00 0x300>;
 			status = "disabled";
 
 			qcom,ctl@1a00 {
@@ -412,6 +637,7 @@
 			regulator-name = "8941_l5";
 			reg = <0x4400 0x100>;
 			compatible = "qcom,qpnp-regulator";
+			qcom,force-type = <0x04 0x10>;
 			status = "disabled";
 		};
 
@@ -426,6 +652,7 @@
 			regulator-name = "8941_l7";
 			reg = <0x4600 0x100>;
 			compatible = "qcom,qpnp-regulator";
+			qcom,force-type = <0x04 0x10>;
 			status = "disabled";
 		};
 
