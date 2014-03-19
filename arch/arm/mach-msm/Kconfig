@@ -927,6 +927,13 @@ config MACH_BLUE_HAYABUSA
 	help
 	  Support for the Sony Hayabusa
 
+config MACH_BLUE_CDB
+       depends on ARCH_MSM8960
+       default n
+       bool "SONY Blue CDB"
+       help
+         Support for the Sony Blue CDB
+
 config MACH_BLUE_TSUBASA
         depends on ARCH_MSM8960
         default n
