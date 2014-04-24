@@ -320,10 +320,6 @@ obj-$(CONFIG_MACH_BLUE_CDB) += gyro-sony_common.o board-blue_cdb-mpu.o board-blu
 obj-$(CONFIG_MACH_BLUE_CDB) += irda-blue_common.o
 obj-$(CONFIG_MACH_BLUE_CDB) += oneseg-blue_common.o
 
-obj-$(CONFIG_MACH_BLUE_TSUBASA) += board-blue-all.o board-blue_tsubasa-pmic.o board-blue_tsubasa-gpiomux.o board-blue_tsubasa-regulator.o bms-batterydata-august.o
-obj-$(CONFIG_MACH_BLUE_TSUBASA) += gyro-sony_common.o board-blue_tsubasa-mpu.o board-blue_tsubasa-leds.o board-blue_tsubasa-camera.o board-blue_tsubasa-usb.o
-
-
 obj-$(CONFIG_MACH_BLUE_MINT) += board-blue-all.o board-blue_mint-pmic.o board-blue_mint-gpiomux.o board-blue_mint-regulator.o bms-batterydata-mentos.o
 obj-$(CONFIG_MACH_BLUE_MINT) += gyro-sony_common.o board-blue_mint-mpu.o board-blue_mint-camera.o board-blue_mint-leds.o board-blue_mint-usb.o
 
