@@ -927,13 +927,6 @@ config MACH_BLUE_CDB
        help
          Support for the Sony Blue CDB
 
-config MACH_BLUE_TSUBASA
-        depends on ARCH_MSM8960
-        default n
-        bool "SONY Tsubasa RoW"
-        help
-          Support for the Sony Tsubasa RoW
-
 config MACH_BLUE_MINT
 	depends on ARCH_MSM8960
 	default n
