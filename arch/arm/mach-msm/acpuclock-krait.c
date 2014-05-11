@@ -60,8 +60,6 @@ static struct drv_data {
 	struct device *dev;
 } drv;
 
-struct acpu_level *acpu_freq_tbl;
-
 static unsigned long acpuclk_krait_get_rate(int cpu)
 {
 	return drv.scalable[cpu].cur_speed->khz;
@@ -1031,8 +1029,8 @@ static const int krait_needs_vmin(void)
 static void krait_apply_vmin(struct acpu_level *tbl)
 {
 	for (; tbl->speed.khz != 0; tbl++) {
-		//if (tbl->vdd_core < 1150000)
-		//	tbl->vdd_core = 1150000;
+		if (tbl->vdd_core < 1150000)
+			tbl->vdd_core = 1150000;
 		tbl->avsdscr_setting = 0;
 	}
 }
@@ -1121,7 +1119,6 @@ static void __init drv_data_init(struct device *dev,
 		GFP_KERNEL);
 	BUG_ON(!drv.bus_scale->usecase);
 
-	acpu_freq_tbl = drv.acpu_freq_tbl;
 	pvs = select_freq_plan(params->pte_efuse_phys, params->pvs_tables);
 	BUG_ON(!pvs->table);
 

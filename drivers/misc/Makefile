@@ -81,7 +81,6 @@ obj-$(CONFIG_SENSORS_MPU3050) += mpu3050/
 obj-$(CONFIG_SENSORS_MPU6050) += mpu6050/
 obj-$(CONFIG_NFC_PN544)		+= pn544.o
 obj-$(CONFIG_RAMDUMP_TAGS) += rdtags.o
-obj-$(CONFIG_CPU_UNDERVOLTING)	+= cpu_undervolting.o
 
 obj-$(CONFIG_LM3561)		+= lm3561.o
 obj-$(CONFIG_RAMDUMP_CRASH_LOGS) += ramdumplogs.o
