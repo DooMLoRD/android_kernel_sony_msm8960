@@ -2779,6 +2779,12 @@ config GPU_OVERCLOCK
 	help
 	  Adreno2xx overclocking up to 480 MHz
 
+config INTELLI_PLUG
+	bool "Enable intelli-plug cpu hotplug driver"
+	default n
+	help
+	  Generic Intelli-plug cpu hotplug driver for ARM SOCs
+
 config FORCE_FAST_CHARGE
 	bool "Force AC charge mode at will"
 	default y
